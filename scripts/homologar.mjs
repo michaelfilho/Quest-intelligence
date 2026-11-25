@@ -1,4 +1,4 @@
-﻿// Homologação isolada e multiplataforma. Não carrega .env nem acessa o PostgreSQL.
+// Homologação isolada e multiplataforma. Não carrega .env nem acessa o PostgreSQL.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, openSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,4 +52,3 @@ try {
   for (const p of children) p.kill();
   console.log(`Logs e SQLite temporário: ${dir}`);
 }
-
