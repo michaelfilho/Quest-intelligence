@@ -1,4 +1,4 @@
-import { Briefcase, Building2, Clock, Factory, FileText, LayoutGrid, Layers, Scale, Settings, ShieldCheck, TrendingUp, Users, Wallet, Zap, type LucideIcon } from "lucide-react";
+import { Bell, Briefcase, Building2, Clock, Factory, FileText, LayoutGrid, Layers, Scale, Settings, ShieldCheck, TrendingUp, Users, Wallet, Zap, type LucideIcon } from "lucide-react";
 import { MODULES } from "../../shared/catalog";
 import { monthPeriod, todaySP } from "../../shared/contracts";
 import { MODULE_PERMISSION, type Permission } from "../../shared/permissions";
@@ -34,15 +34,20 @@ export interface NavItem {
   anyOf: Permission[];
 }
 
-const GROUP_LABEL: Record<string, string> = { Principal: "Navegação principal", Análises: "Análises", Governança: "Governança" };
-
-const modules: NavItem[] = MODULES.filter((m) => !m.detailOf).map((m) => ({ id: m.id, path: m.path, label: m.label, group: GROUP_LABEL[m.group] ?? m.group, icon: MODULE_ICON[m.id], question: m.question, anyOf: [MODULE_PERMISSION[m.id]] }));
-
-export const NAV: NavItem[] = [
-  ...modules.filter((m) => m.group !== "Governança"),
-  { id: "relatorios", path: "/relatorios", label: "Relatórios", group: "Análises", icon: FileText, question: "Relatórios gerenciais com exportação CSV (Excel pt-BR).", anyOf: ["relatorios.view"] },
-  ...modules.filter((m) => m.group === "Governança"),
-  { id: "configuracoes", path: "/configuracoes", label: "Configurações", group: "Governança", icon: Settings, question: "Usuários, perfis, acesso, sessões, auditoria e integrações.", anyOf: ["config.view", "usuarios.manage", "perfis.manage", "ip.manage", "sessoes.manage", "auditoria.view"] },
+const menu=(id:string,group:string):NavItem=>{
+  const m=MODULES.find(m=>m.id===id)!;
+  return {id,path:m.path,label:m.label,group,icon:MODULE_ICON[id],question:m.question,anyOf:[MODULE_PERMISSION[id]]};
+};
+export const NAV:NavItem[]=[
+  menu('executivo','Gestão Executiva'),menu('clientes','Gestão Comercial'),menu('contratos','Gestão Comercial'),
+  ...['projetos','producao','timesheet','colaboradores','departamentos','produtividade'].map(id=>menu(id,'Gestão Operacional')),
+  menu('financeiro','Gestão Financeira'),menu('rentabilidade','Gestão Financeira'),
+  {id:'dre',path:'/dre',label:'DRE Gerencial',group:'Gestão Financeira',icon:Scale,question:'Demonstração gerencial por pagamentos realizados.',anyOf:['financeiro.view']},
+  {id:'caixa',path:'/fluxo-caixa',label:'Fluxo de Caixa',group:'Gestão Financeira',icon:Wallet,question:'Entradas e saídas realizadas, separadas de previsões.',anyOf:['financeiro.view']},
+  {id:'relatorios',path:'/relatorios',label:'Relatórios',group:'Gestão e Controle',icon:FileText,question:'Relatórios por finalidade.',anyOf:['relatorios.view']},
+  {id:'alertas',path:'/alertas',label:'Alertas',group:'Gestão e Controle',icon:Bell,question:'Pontos de atenção para a gestão.',anyOf:['estrategicos.view','producao.view','projetos.view','financeiro.view','qualidade.view']},
+  menu('qualidade','Administração'),
+  {id:'configuracoes',path:'/configuracoes',label:'Configurações',group:'Administração',icon:Settings,question:'Usuários, perfis e segurança.',anyOf:['config.view','usuarios.manage','perfis.manage','ip.manage','sessoes.manage','auditoria.view']},
 ];
 
 /** Itens de menu liberados para um conjunto de permissões (o backend aplica de verdade). */

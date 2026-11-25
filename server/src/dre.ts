@@ -43,16 +43,25 @@ const unclassified="classification IS NULL OR classification='NENHUM' OR classif
 export async function dreMetric(id:string,f:Filters,reader:Reader=q):Promise<Computed> {
   const temporal=id==='receita_competencia'?'competence_date':'payment_date';
   const src=await dreSource(f,reader,true,temporal),definition=DRE_GROUPS[id];
-  const params=[...src.params];let predicate='TRUE';
-  if(definition){params.push(definition.type,definition.labels);predicate=`tipo=$${params.length-1} AND classification=ANY($${params.length}::text[])`;}
-  else if(id==='movimentacoes_sem_classificacao')predicate=unclassified;
-  else predicate=`(${revenue}) OR (${expense})`;
-  const [r]=await reader(`WITH source AS (${src.sql}) SELECT sum(valor) FILTER (WHERE ${predicate})::float8 AS amount,
-    coalesce(sum(valor) FILTER (WHERE ${revenue}),0)::float8 AS revenue,coalesce(sum(valor) FILTER (WHERE ${expense}),0)::float8 AS expense,
-    count(*) FILTER (WHERE ${predicate})::int AS used,count(*)::int AS eligible,
-    count(*) FILTER (WHERE (${unclassified}) ${definition?`AND tipo=$${params.length-1}`:''})::int AS unknown,
-    count(*) FILTER (WHERE ((${revenue}) OR (${expense})) AND valor<0)::int AS negatives,
+  // FILTER consolida os cards em uma passagem; somas monetárias permanecem numeric no SQL.
+  const params=[...src.params];
+  const fields=Object.entries(DRE_GROUPS).flatMap(([key,g])=>{
+    params.push(g.type,g.labels);
+    const predicate=`tipo=$${params.length-1} AND classification=ANY($${params.length}::text[])`;
+    return [`sum(valor) FILTER(WHERE ${predicate})::float8 AS a_${key}`,`count(*) FILTER(WHERE ${predicate})::int AS n_${key}`];
+  });
+  const [summary]=await reader(`WITH source AS (${src.sql}) SELECT ${fields.join(',')},
+    count(*)::int AS eligible,count(*) FILTER(WHERE ${unclassified})::int AS unknown,
+    count(*) FILTER(WHERE (${unclassified}) AND tipo='Entrada')::int AS unknown_in,
+    count(*) FILTER(WHERE (${unclassified}) AND tipo='Saída')::int AS unknown_out,
+    sum(valor) FILTER(WHERE ${unclassified})::float8 AS unknown_amount,
+    count(*) FILTER(WHERE (${revenue}) OR (${expense}))::int AS operations,
+    count(*) FILTER(WHERE ((${revenue}) OR (${expense})) AND valor<0)::int AS negatives,
     (SELECT count(*)::int FROM (${src.base}) b) AS total FROM source`,params);
+  const r:Record<string,any>={...summary,amount:definition?summary[`a_${id}`]:id==='movimentacoes_sem_classificacao'?summary.unknown_amount:null,
+    used:definition?summary[`n_${id}`]:id==='movimentacoes_sem_classificacao'?summary.unknown:summary.operations,
+    unknown:definition?(definition.type==='Entrada'?summary.unknown_in:summary.unknown_out):summary.unknown,
+    revenue:summary.a_receita_recebida??0,expense:summary.a_despesas??0};
   let value:number|null=Number(r.eligible)>0?Number(r.amount??0):null;
   const result=['resultado_operacional','margem_operacional'].includes(id);
   if(!result&&id!=='movimentacoes_sem_classificacao'&&!Number(r.used)&&Number(r.unknown)>0)value=null;
@@ -95,6 +104,11 @@ export async function dreMonthlyTable(f:Filters,p:Page,reader:Reader=q){
 }
 export async function dreDimensionTable(dim:'category'|'account'|'client'|'project',f:Filters,p:Page,reader:Reader=q) {
   const src=await dreSource(f,reader,dim==='category'),sort=p.sort??'entrada';
+  if(p.dreGroup){
+    const group=DRE_GROUPS[p.dreGroup];if(!group||dim!=='category')throw new SourceLimitation('Grupo da demonstração inválido.');
+    src.params.push(group.type,group.labels);
+    src.sql=`SELECT * FROM (${src.sql}) dre_selected WHERE tipo=$${src.params.length-1} AND classification=ANY($${src.params.length}::text[])`;
+  }
   const field=dim==='account'?'account_id':'job_id';
   if(dim!=='category'&&!src.s.columns.some(c=>c.schema==='core'&&c.table==='financial_entries'&&c.column===field))throw new SourceLimitation(`Campo ausente: financial_entries.${field}.`);
   if(!['nome','entrada','saida','movimentos'].includes(sort))throw new SourceLimitation('Coluna DRE indisponível.');

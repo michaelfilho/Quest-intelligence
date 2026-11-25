@@ -9,8 +9,8 @@ test('verificador usa referÃªncias PostgreSQL, continua com fontes ausentes e nÃ
   const oldArgv=process.argv,oldExit=process.exitCode,oldUrl=process.env.DATABASE_URL,oldMode=process.env.NODE_ENV;
   const logs:string[]=[];
   const logger=mock.method(console,'log',(...args:unknown[])=>logs.push(args.join(' ')));
-  const query=mock.method(pg.Pool.prototype,'query',async(sql:any,params:any)=>
-    String(sql).includes('current_user AS role')?{rows:[{role:'quest_rinne_app_ro',readonly:'on'}]}:engine.query(sql,params));
+  const query=mock.method(pg.Pool.prototype,'connect',async()=>({query:async(sql:any,params:any)=>
+    String(sql).includes('current_user AS role')?{rows:[{role:'quest_rinne_app_ro',readonly:'on'}]}:engine.query(sql,params),release(){}}));
   try {
     process.env.NODE_ENV='test';process.env.DATABASE_URL='postgres://fixture_ro@127.0.0.1:1/quest_rinne';
     process.argv=['node','verify-analytics.ts','--start','2026-01-01','--end','2026-01-31'];

@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { monthPeriod, type Dimension, type DimensionResult } from "../../../shared/contracts";
-import { api, useFilters } from "../lib";
+import { api, useFilters, useDebouncedFilters,useMe } from "../lib";
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
@@ -21,14 +22,14 @@ const input = "h-10 rounded-lg border border-q-line bg-white px-3 text-sm font-n
 
 function DimSelect({ dim, label, value, onChange }: { dim: Dimension; label: string; value?: string; onChange: (v?: string) => void }) {
   const { filters } = useFilters();
-  const dimensionFilters = { ...filters, compare: false };
-  const q = useQuery({ queryKey: ["dim", dim, dimensionFilters], queryFn: () => api<DimensionResult>(`/dimensions/${dim}`, { ...dimensionFilters, compare: undefined }), staleTime: 60000,refetchInterval:dim==='services'?false:60000 });
+  const dimensionFilters = { ...useDebouncedFilters(filters), compare: false };
+  const q = useQuery({ queryKey: ["dim", dim, dimensionFilters], queryFn: ({signal}) => api<DimensionResult>(`/dimensions/${dim}`, { ...dimensionFilters, compare: undefined },signal), staleTime: 60000 });
   const options = q.data?.options ?? [];
   const disabled = !options.length && !value;
   return (
     <label className={field}>
       {label}
-      <select className={`${input} min-w-40 disabled:cursor-not-allowed disabled:bg-q-bg disabled:text-q-mid`} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(e.target.value || undefined)} title={disabled ? (q.data?.reason ?? "Carregando…") : undefined}>
+      <select aria-label={label} className={`${input} min-w-40 disabled:cursor-not-allowed disabled:bg-q-bg disabled:text-q-mid`} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(e.target.value || undefined)} title={disabled ? (q.data?.reason ?? "Carregando…") : undefined}>
         <option value="">{disabled ? "Indisponível" : "Todos"}</option>
         {value && !options.some((o) => o.value === value) && <option value={value}>Seleção sem cadastro no período</option>}
         {options.map((o) => (
@@ -42,6 +43,8 @@ function DimSelect({ dim, label, value, onChange }: { dim: Dimension; label: str
 /** Filtros globais (compartilhados por todos os módulos, guardados na URL). O período rápido fica no cabeçalho. */
 export function FilterBar() {
   const { filters, set, clear, active } = useFilters();
+  const financial=/^\/(financeiro|dre|fluxo-caixa)(\/|$)/.test(useLocation().pathname);
+  const scope=useMe().data?.scopeDepartment;
   const [more, setMore] = useState(false);
   const year = Number(filters.start.slice(0, 4));
   const isMonth = filters.start.slice(0, 7) === filters.end.slice(0, 7) && filters.start.endsWith("-01");
@@ -94,11 +97,14 @@ export function FilterBar() {
       </div>
       {more && (
         <div className="mt-4 flex flex-wrap gap-3 border-t border-q-line pt-4">
-          {DIMS.map((d) => (
-            <DimSelect key={d.key} dim={d.dim} label={d.label} value={filters[d.key]} onChange={(v) => set({ [d.key]: v })} />
+          {DIMS.filter(d=>!financial||d.key!=='status').map((d) => (
+            <DimSelect key={d.key} dim={d.dim} label={d.label} value={filters[d.key]} onChange={(v) => set(d.key==='status'?{status:v,statusSource:v?'projects':undefined}:{ [d.key]: v })} />
           ))}
         </div>
       )}
+      {financial&&filters.status&&filters.statusSource==='projects'&&<div className="mt-3 text-xs text-q-mid">Status de projeto não se aplica a notas fiscais ou pagamentos. <button className="text-q-orange underline" onClick={()=>set({status:undefined,statusSource:undefined})}>Remover filtro de status</button></div>}
+      {filters.category&&<div className="mt-3 text-xs text-q-mid">Categoria financeira selecionada <button className="ml-2 text-q-orange underline" onClick={()=>set({category:undefined})}>Remover filtro de categoria</button></div>}
+      {scope&&<p className="mt-3 text-xs text-q-mid">Seu acesso está limitado ao departamento definido no seu perfil. Essa restrição é aplicada a todas as consultas.</p>}
     </section>
   );
 }

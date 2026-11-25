@@ -65,6 +65,9 @@ export const MODULE_PERMISSION: Record<string, Permission> = {
 
 /** Itens (indicador/gráfico/tabela/coluna) com dado sensível próprio, além da permissão do módulo. */
 const ITEM_PERMISSION: Record<string, Permission> = {
+  colaboradores:'departamentos.view',departamentos:'departamentos.view',capacidade_colaboradores:'capacidade.view',
+  caixa_diario:'financeiro.view',caixa_mensal:'financeiro.view',titulos_receber:'financeiro.view',titulos_pagar:'financeiro.view',saldo:'financeiro.view',
+  evolucao_resultado:'rentabilidade.view',
   lancamentos_futuros: "financeiro.view",
   custo_mao_de_obra: "custos_pessoal.view",
   horas_com_custo_positivo:'custos_pessoal.view',horas_sem_custo_positivo:'custos_pessoal.view',cobertura_custo_positivo_horas:'custos_pessoal.view',

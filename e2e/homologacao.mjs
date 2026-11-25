@@ -88,9 +88,10 @@ await check("primeiro acesso: troca obrigatória da senha temporária", async ()
 });
 
 const ROUTES = [
-  ["/", "Visão geral"], ["/clientes", "Clientes"], ["/clientes/123", "Cliente"], ["/projetos", "Projetos / Jobs"], ["/projetos/987", "Projeto"], ["/rentabilidade", "Rentabilidade"],
-  ["/financeiro", "Financeiro"], ["/timesheet", "Timesheet"], ["/departamentos", "Departamentos"], ["/colaboradores", "Colaboradores"], ["/produtividade", "Produtividade"],
-  ["/producao", "Produção"], ["/contratado", "Contratado × executado"], ["/contratos", "Contratos"], ["/capacidade", "Capacidade operacional"], ["/eficiencia", "Eficiência"], ["/qualidade", "Qualidade dos dados"], ["/relatorios", "Central de relatórios"], ["/configuracoes", "Configurações"], ["/conta", "Minha conta"],
+  ["/", "Visão geral"], ["/clientes", "Clientes"], ["/clientes/123", "Cliente"], ["/projetos", "Projetos"], ["/projetos/987", "Projeto"], ["/rentabilidade", "Rentabilidade"],
+  ["/financeiro", "Financeiro"], ["/timesheet", "Timesheet"], ["/departamentos", "Departamentos"], ["/colaboradores", "Colaboradores"], ["/produtividade", "Produtividade e Capacidade"],
+  ["/producao", "Produção"], ["/contratado", "Contratado × executado"], ["/contratos", "Contratos e Escopos"], ["/capacidade", "Capacidade operacional"], ["/eficiencia", "Eficiência"], ["/qualidade", "Integrações e Qualidade"], ["/relatorios", "Central de relatórios"], ["/configuracoes", "Configurações"], ["/conta", "Minha conta"],
+  ['/dre','DRE Gerencial'],['/fluxo-caixa','Fluxo de Caixa'],['/alertas','Alertas'],['/departamentos/A','Departamentos'],['/colaboradores/1','Colaboradores'],
 ];
 for (const [path, title] of ROUTES) {
   await check(`tela ${path}`, async () => {
@@ -111,29 +112,30 @@ await check("escopo 1.0: sem IA, voz ou reunião no menu nem nas rotas", async (
     await p.getByText("Página não encontrada").first().waitFor();
   }
 });
-await check("sem banco: aviso DATABASE_UNAVAILABLE e nenhum valor inventado", async () => {
+await check("sem banco: estado gerencial curto e nenhum valor inventado", async () => {
   await p.goto(BASE + "/financeiro");
-  await p.getByText("DATABASE_UNAVAILABLE").first().waitFor();
+  await p.getByText('Integração pendente').first().waitFor();
   if (await p.locator("text=/R\\$\\s?\\d/").count()) throw new Error("valor monetário exibido sem banco");
 });
 await check("rastreabilidade: gaveta do indicador abre e fecha", async () => {
   await p.getByTitle("Ver origem, fórmula e registros").first().click();
-  await p.getByText("Rastreabilidade do indicador").waitFor();
-  await p.getByText("Tabelas de origem").waitFor();
+  await p.getByText('Sobre o indicador').waitFor();
+  await p.getByText('Como é calculado').waitFor();
   await shot(p, "rastreabilidade");
   await p.keyboard.press("Escape");
-  await p.getByText("Rastreabilidade do indicador").waitFor({ state: "detached" });
+  await p.getByText('Sobre o indicador').waitFor({state:'detached'});
 });
-await check("tabela: ordenação no servidor (aria-sort)", async () => {
+await check("tabela sem banco: indisponibilidade clara sem simular linhas", async () => {
   await p.goto(BASE + "/clientes");
   await settle(p);
-  const th = p.locator('th:has(button:text-is("Cliente"))').first();
-  await th.locator("button").click();
-  await settle(p);
-  if ((await th.getAttribute("aria-sort")) !== "ascending") throw new Error("aria-sort não mudou");
-  await th.locator("button").click();
-  await settle(p);
-  if ((await th.getAttribute("aria-sort")) !== "descending") throw new Error("ordem não inverteu");
+  const th = p.getByRole('heading',{name:'Clientes',level:3,exact:true});
+  // Tabelas abaixo da dobra agora são consultadas apenas quando entram no viewport.
+  for(let i=0;i<5&&!await th.count();i++){
+    await p.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
+    await p.waitForTimeout(250);
+  }
+  await th.waitFor();
+  await p.getByText('Integração indisponível').first().waitFor();
 });
 await check("filtros globais: período e comparação persistem na URL entre módulos", async () => {
   await p.goto(BASE + "/");
@@ -190,6 +192,18 @@ await check("Configurações: criar usuário com perfil restrito (Analista)", as
 
 // ---------------- Notebook e celular (mesma sessão) ----------------
 const state = await desk.ctx.storageState();
+await check('carregamento progressivo: cards não aguardam gráficos lentos',async()=>{
+  const progressive=await newPage({width:1440,height:900},state);
+  try{
+    await progressive.page.route('**/api/charts/**',async route=>{
+      await new Promise(resolve=>setTimeout(resolve,2000));
+      await route.continue().catch(()=>{});
+    });
+    await progressive.page.goto(BASE+'/capacidade');
+    await progressive.page.locator('[title^="Consultado em"]').first().waitFor({timeout:1500});
+    await progressive.page.unrouteAll({behavior:'wait'});
+  }finally{await progressive.ctx.close();}
+});
 const note = await newPage({ width: 1280, height: 720 }, state);
 await check("notebook 1280×720: visão geral e financeiro sem rolagem horizontal", async () => {
   for (const path of ["/", "/financeiro"]) {
@@ -228,7 +242,7 @@ await check("perfil restrito: troca de senha, menu filtrado e bloqueio por padr�
   const nav = r.getByRole("navigation", { name: "Módulos" });
   await nav.waitFor();
   for (const forbidden of ["Financeiro", "Rentabilidade", "Configurações"]) if (await nav.getByRole("link", { name: forbidden, exact: true }).count()) throw new Error(`item proibido no menu: ${forbidden}`);
-  for (const allowed of ["Produção", "Projetos / Jobs", "Qualidade dos dados"]) await nav.getByRole("link", { name: allowed }).waitFor(); // nome inclui o selo OFFLINE em Qualidade
+  for (const allowed of ["Produção", "Projetos", "Integrações e Qualidade"]) await nav.getByRole("link", { name: allowed }).waitFor();
   await shot(r, "restrito-menu");
   for (const path of ["/financeiro", "/rentabilidade", "/configuracoes"]) {
     await r.goto(BASE + path);

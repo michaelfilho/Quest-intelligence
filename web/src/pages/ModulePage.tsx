@@ -1,125 +1,63 @@
-import { useQuery } from "@tanstack/react-query";
-import { DatabaseZap, Lock } from "lucide-react";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { CHARTS, INDICATORS, TABLES, moduleById } from "../../../shared/catalog";
-import type { Filters, ModuleResult } from "../../../shared/contracts";
-import { ChartPanel } from "../components/ChartPanel";
-import { DataTable } from "../components/DataTable";
-import { FilterBar } from "../components/FilterBar";
-import { KpiCard } from "../components/KpiCard";
-import { TraceDrawer } from "../components/TraceDrawer";
-import { CountPill, EmptyState, ErrorState, PageHeader } from "../components/ui";
-import { itemPermission, MODULE_PERMISSION } from "../../../shared/permissions";
-import { api, filterParams, fmtDate, useCan, useFilters } from "../lib";
-import { MODULE_ICON } from "../nav";
-import { ConnectionPanel } from "./ConnectionPanel";
+import {useQuery} from '@tanstack/react-query';
+import {DatabaseZap,Lock} from 'lucide-react';
+import {useState} from 'react';
+import {Link,useParams,useSearchParams} from 'react-router-dom';
+import {CHARTS,INDICATORS,TABLES,moduleById} from '../../../shared/catalog';
+import {MANAGEMENT_VIEWS,type ManagementView} from '../../../shared/management';
+import type {Filters,ModuleResult} from '../../../shared/contracts';
+import {MODULE_PERMISSION} from '../../../shared/permissions';
+import {ProgressiveChart,ProgressiveIndicator,Viewport} from '../components/Progressive';
+import {DataTable} from '../components/DataTable';
+import {FilterBar} from '../components/FilterBar';
+import {TraceDrawer} from '../components/TraceDrawer';
+import {CountPill,EmptyState,ErrorState,PageHeader} from '../components/ui';
+import {api,filterParams,fmtDate,useCan,useCatalogCan,useFilters,useDebouncedFilters} from '../lib';
+import {MODULE_ICON} from '../nav';
+import {ConnectionPanel} from './ConnectionPanel';
+import {AlertsPanel,DreStatement} from '../components/ManagementPanels';
 
-export function DbBanner({ database }: { database?: string }) {
-  if (!database || database === "CONNECTED") return null;
-  return (
-    <div role="status" className="flex items-start gap-4 rounded-xl bg-q-ink px-6 py-5 text-sm text-white">
-      <DatabaseZap size={22} className="mt-0.5 shrink-0 text-q-orange" aria-hidden />
-      <div>
-        <p className="font-bold">
-          Banco de dados {database === "NOT_CONFIGURED" ? "não configurado" : "indisponível"} <span className="ml-1 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-q-orange">DATABASE_UNAVAILABLE</span>
-        </p>
-        <p className="mt-1 text-white/65">Nenhum valor é exibido nem simulado. Os indicadores mostram sua definição e origem e serão preenchidos quando o backend se conectar ao PostgreSQL quest_rinne e os mapeamentos do schema real forem validados.</p>
-      </div>
-    </div>
-  );
+export function DbBanner({database}:{database?:string}){
+  if(!database||database==='CONNECTED')return null;
+  return <div role="status" className="flex items-start gap-3 rounded-xl bg-q-ink px-5 py-4 text-sm text-white"><DatabaseZap size={20} className="shrink-0 text-q-orange"/><div><p className="font-bold">{database==='NOT_CONFIGURED'?'Integração pendente':'Dados indisponíveis no momento'}</p><p className="mt-1 text-white/65">Os valores serão apresentados quando a fonte estiver disponível. Nenhuma informação ausente é tratada como zero.</p></div></div>;
 }
-
-export function NoAccess({ title }: { title: string }) {
-  return (
-    <div className="mx-auto max-w-[900px] rounded-xl border border-q-line bg-white">
-      <div className="flex justify-center pt-10"><Lock size={28} className="text-q-orange" /></div>
-      <EmptyState title={`Sem permissão para ${title}`} reason="Seu perfil não inclui esta área. Solicite a liberação a um administrador." />
-    </div>
-  );
+export function NoAccess({title}:{title:string}){
+  return <div className="mx-auto max-w-[900px] rounded-xl border border-q-line bg-white"><div className="flex justify-center pt-10"><Lock size={28} className="text-q-orange"/></div><EmptyState title={`Sem permissão para ${title}`} reason="Seu perfil não inclui esta área. Solicite a liberação a um administrador."/></div>;
 }
-
-export function ModulePage({ moduleId }: { moduleId: string }) {
-  const can = useCan();
-  const m = moduleById(moduleId)!;
-  if (!can(MODULE_PERMISSION[m.id])) return <NoAccess title={m.label} />;
-  return <ModuleContent moduleId={moduleId} />;
+export function ModulePage({moduleId,preset}:{moduleId:string;preset?:ManagementView}){
+  const can=useCan(),m=moduleById(moduleId)!;
+  return can(MODULE_PERMISSION[m.id])?<ModuleContent moduleId={moduleId} preset={preset}/>:<NoAccess title={preset?.label??m.label}/>;
 }
-
-function ModuleContent({ moduleId }: { moduleId: string }) {
-  const can = useCan();
-  const m = moduleById(moduleId)!;
-  // Itens sem permissão nem são exibidos (o backend também os devolve como FORBIDDEN, sem dados).
-  const indicators = m.indicators.filter((i) => can(itemPermission(i, INDICATORS[i].basis)));
-  const charts = m.charts.filter((c) => can(itemPermission(c, CHARTS[c].basis)));
-  const { id } = useParams();
-  const { filters: global, search } = useFilters();
-  // Páginas de detalhe fixam o escopo (cliente/projeto) por cima dos filtros globais.
-  const filters: Filters = m.detailOf === "client" ? { ...global, client: id } : m.detailOf === "project" ? { ...global, project: id } : global;
-  const [open, setOpen] = useState<string | null>(null);
-
-  const q = useQuery({ refetchInterval: 60000, queryKey: ["module", m.id, filters], queryFn: () => api<ModuleResult>(`/modules/${m.id}`, filterParams(filters)) });
-  const data = q.data;
-  const byId = <T extends { id: string }>(list?: T[]) => Object.fromEntries((list ?? []).map((x) => [x.id, x]));
-  const ind = byId(data?.indicators);
-  const chs = byId(data?.charts);
-  const pending = data?.database === "CONNECTED" && data.indicators.every((i) => i.status === "NOT_IMPLEMENTED");
-  const tables = m.tables.filter((t) => can(itemPermission(t))).map((t) => TABLES[t]);
-  const table = (t: (typeof tables)[number]) => <DataTable key={t.id} def={t} filters={filters} search={search} />;
-
-  return (
-    <div className="mx-auto max-w-[1480px] space-y-6">
-      <PageHeader
-        icon={MODULE_ICON[m.id]}
-        title={<>{m.label}{id && <span className="font-medium text-q-mid">· {data?.entityName ?? "..."}</span>}</>}
-        subtitle={m.question}
-        back={m.detailOf && (
-          <Link to={{ pathname: m.detailOf === "client" ? "/clientes" : "/projetos", search }} className="mb-1 inline-block text-xs font-medium text-q-mid hover:text-q-orange">
-            ← {m.detailOf === "client" ? "Clientes" : "Projetos / Jobs"}
-          </Link>
-        )}
-        right={
-          <CountPill>
-            {fmtDate(filters.start)} – {fmtDate(filters.end)}
-            {data?.previousPeriod && <span className="font-normal text-q-mid"> · vs. {fmtDate(data.previousPeriod.start)} – {fmtDate(data.previousPeriod.end)}</span>}
-          </CountPill>
-        }
-      />
-
-      <DbBanner database={data?.database} />
-      {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
-      {pending && (
-        <div role="status" className="rounded-xl border border-q-line border-l-4 border-l-q-orange bg-white px-6 py-4 text-sm">
-          <p className="font-bold">Banco conectado — critérios pendentes</p>
-          <p className="mt-1 text-q-mid">As fontes ou definições gerenciais necessárias a este módulo ainda não foram comprovadas. Consulte os motivos no detalhamento dos indicadores.</p>
-        </div>
-      )}
-
-      <FilterBar />
-      {m.id === "qualidade" && <ConnectionPanel />}
-
-      {indicators.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-          {indicators.map((i) => (
-            <KpiCard key={i} def={INDICATORS[i]} result={q.isError ? undefined : ind[i]} onOpen={() => setOpen(i)} />
-          ))}
-        </div>
-      )}
-
-      {tables.filter((t) => t.display === "alerts").map(table)}
-
-      {charts.length > 0 && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          {charts.map((c) => (
-            <ChartPanel key={c} def={CHARTS[c]} result={chs[c]} />
-          ))}
-        </div>
-      )}
-
-      {tables.some((t) => t.display === "list") && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">{tables.filter((t) => t.display === "list").map(table)}</div>}
-      {tables.filter((t) => !t.display || t.display === "table" || t.display === "cards").map(table)}
-
-      {open && <TraceDrawer id={open} filters={filters} onClose={() => setOpen(null)} />}
-    </div>
-  );
+function ModuleContent({moduleId,preset}:{moduleId:string;preset?:ManagementView}){
+  const allowed=useCatalogCan(),m=moduleById(moduleId)!,{id}=useParams(),[sp,setSp]=useSearchParams();
+  const {filters:input}=useFilters(),global=useDebouncedFilters(input);
+  const filters:Filters=m.detailOf==='client'?{...global,client:id}:m.detailOf==='project'?{...global,project:id}:m.id==='departamentos'&&id?{...global,department:id}:m.id==='colaboradores'&&id?{...global,employee:id}:global;
+  const searchParams=new URLSearchParams(sp);for(const [key,value]of Object.entries(filterParams(filters)))if(value!==undefined)searchParams.set(key,String(value));
+  const search=searchParams.toString();
+  const baseViews=preset?[preset]:MANAGEMENT_VIEWS[m.id]??[{id:'visao',label:'Visão Geral',indicators:m.indicators,charts:m.charts,tables:m.tables}];
+  const views:ManagementView[]=m.id==='colaboradores'?[baseViews[0],{id:'projetos',label:'Projetos',indicators:[],charts:[],tables:['timesheet_projetos']},...baseViews.slice(1)]:baseViews;
+  const back=new URLSearchParams(sp);if(id)back.delete(m.detailOf==='client'?'client':m.detailOf==='project'?'project':m.id==='departamentos'?'department':'employee');
+  const all:ManagementView={id:'todos',label:'Todos os indicadores',indicators:m.indicators,charts:m.charts,tables:m.tables};
+  const view=preset??views.find(v=>v.id===sp.get('aba'))??(sp.get('aba')==='todos'?all:views[0]);
+  const [open,setOpen]=useState<string|null>(null);
+  const q=useQuery({queryKey:['module-summary',m.id,filters],queryFn:({signal})=>api<ModuleResult>(`/modules/${m.id}`,{...filterParams(filters),view:'summary'},signal)});
+  const indicators=view.indicators.filter(i=>allowed('indicators',i)),charts=view.charts.filter(c=>allowed('charts',c));
+  const tables=view.tables.filter(t=>allowed('tables',t)&&t!=='alertas').map(t=>TABLES[t]);
+  const table=(t:typeof tables[number])=><Viewport key={t.id}>{active=><DataTable def={t} filters={filters} search={search} active={active}/>}</Viewport>;
+  const setTab=(tab:string)=>{const next=new URLSearchParams(sp);next.set('aba',tab);setSp(next,{replace:true});};
+  return <div className="mx-auto max-w-[1480px] space-y-6">
+    <PageHeader icon={MODULE_ICON[m.id]} title={<>{preset?.label??m.label}{id&&<span className="font-medium text-q-mid"> · {q.data?.entityName??'Detalhes'}</span>}</>} subtitle={preset?.id==='dre'?'Receitas e despesas operacionais por pagamentos realizados.':m.id==='executivo'?'Os principais resultados financeiros e operacionais da agência.':undefined}
+      back={id&&<Link to={{pathname:m.detailOf==='client'?'/clientes':m.detailOf==='project'?'/projetos':m.path,search:back.toString()}} className="mb-1 inline-block text-xs font-medium text-q-mid hover:text-q-orange">← Voltar para a listagem</Link>}
+      right={<CountPill>{fmtDate(filters.start)} – {fmtDate(filters.end)}{q.data?.previousPeriod&&<span className="font-normal text-q-mid"> · vs. {fmtDate(q.data.previousPeriod.start)} – {fmtDate(q.data.previousPeriod.end)}</span>}</CountPill>}/>
+    <DbBanner database={q.data?.database}/>{q.isError&&<ErrorState error={q.error} onRetry={()=>q.refetch()}/>}
+    <FilterBar/>
+    {!preset&&<nav aria-label="Visualizações" className="flex flex-wrap gap-2 border-b border-q-line pb-3">{[...views,all].map(v=><button key={v.id} aria-current={view.id===v.id?'page':undefined} onClick={()=>setTab(v.id)} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view.id===v.id?'bg-q-ink text-white':'bg-white text-q-mid hover:text-q-orange'}`}>{v.label}</button>)}</nav>}
+    {view.notice&&<p className="rounded-lg border-l-4 border-q-orange bg-white p-4 text-sm text-q-graphite">{view.notice}</p>}
+    {m.id==='qualidade'&&<ConnectionPanel/>}
+    {preset?.id==='dre'?<DreStatement filters={filters} onInfo={setOpen}/>:indicators.length>0&&<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">{indicators.map(i=><ProgressiveIndicator key={i} def={INDICATORS[i]} filters={filters} onOpen={()=>setOpen(i)}/>)}</div>}
+    {m.id==='executivo'&&view.id==='visao'&&<AlertsPanel filters={filters} compact/>}
+    {charts.length>0&&<div className="grid grid-cols-1 gap-6 xl:grid-cols-2">{charts.map(c=><Viewport key={c}>{active=><ProgressiveChart def={CHARTS[c]} filters={filters} active={active}/>}</Viewport>)}</div>}
+    {tables.map(table)}
+    {!indicators.length&&!charts.length&&!tables.length&&<EmptyState title="Acesso aos dados desta aba" reason="Seu perfil não inclui as informações desta visualização. Consulte o administrador."/>}
+    {open&&<TraceDrawer id={open} filters={filters} onClose={()=>setOpen(null)}/>}
+  </div>;
 }

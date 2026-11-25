@@ -1,6 +1,6 @@
 // Homologação isolada e multiplataforma. Não carrega .env nem acessa o PostgreSQL.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, openSync } from 'node:fs';
+import { cpSync, mkdtempSync, openSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,9 +8,12 @@ import { createServer } from 'node:net';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'rinne-homolog-'));
+// Snapshot do build: uma nova compilação/limpeza local não pode mudar o artefato sob teste.
+cpSync(join(root,'web/dist'),join(dir,'dist'),{recursive:true});
 const apiPort = Number(process.env.HOMOLOG_API_PORT ?? 3334);
 const webPort = Number(process.env.HOMOLOG_WEB_PORT ?? 4174);
 const basePath = process.env.VITE_BASE_PATH ?? '/';
+const analyticsFixture=process.env.HOMOLOG_ANALYTICS_FIXTURE==='1';
 const env = { ...process.env, NODE_ENV: 'test', DATABASE_URL: '', DATA_DIR: dir,
   IP_ALLOWLIST_FILE: join(dir, 'ip-allowlist.json'), IP_ALLOWLIST_BOOTSTRAP: '',
   REQUIRE_PROXY: 'false', TRUST_PROXY: 'loopback', COOKIE_SECURE: 'false',
@@ -33,8 +36,8 @@ try {
   const password = output.match(/Senha temporária \(exibida só agora\): (\S+)/)?.[1];
   if (!password) throw new Error('senha temporária não gerada');
   for (const [name, args] of [
-    ['api', ['server/node_modules/tsx/dist/cli.mjs', 'server/src/index.ts']],
-    ['web', [join(root, 'web/node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort']],
+    ['api', ['server/node_modules/tsx/dist/cli.mjs',analyticsFixture?'server/test/serve-management-fixture.ts':'server/src/index.ts']],
+    ['web', [join(root, 'web/node_modules/vite/bin/vite.js'), 'preview', '--outDir',join(dir,'dist'),'--host', '127.0.0.1', '--port', String(webPort), '--strictPort']],
   ]) {
     const log = openSync(join(dir, `${name}.log`), 'a');
     const p = run(args, { cwd: name === 'web' ? join(root, 'web') : root, stdio: ['ignore', log, log] });
@@ -48,7 +51,7 @@ try {
     await new Promise(r => setTimeout(r, 300));
   }
   if (!ready) throw new Error('serviços não ficaram prontos');
-  await done(run(['e2e/homologacao.mjs'], { env: { ...env, BASE: base, ADMIN_USER: 'homolog.admin', ADMIN_TEMP_PASSWORD: password }, stdio: 'inherit' }));
+  await done(run([analyticsFixture?'e2e/management.mjs':'e2e/homologacao.mjs'], { env: { ...env, BASE: base, ADMIN_USER: 'homolog.admin', ADMIN_TEMP_PASSWORD: password }, stdio: 'inherit' }));
 } finally {
   for (const p of children) p.kill();
   console.log(`Logs e SQLite temporário: ${dir}`);

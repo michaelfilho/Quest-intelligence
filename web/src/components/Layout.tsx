@@ -1,5 +1,5 @@
-import { CalendarDays, Database, Menu, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CalendarDays, ChevronDown, Database, Menu, Search } from "lucide-react";
+import { useEffect,useRef, useState } from "react";
 import { matchPath, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { INDICATORS, MODULES } from "../../../shared/catalog";
 import { DB_LABEL, useFilters, useHealth, useMe } from "../lib";
@@ -24,8 +24,10 @@ function useTitle() {
   const { pathname } = useLocation();
   if (matchPath("/clientes/:id", pathname)) return "Cliente";
   if (matchPath("/projetos/:id", pathname)) return "Projeto";
+  if(matchPath('/departamentos/:id',pathname))return 'Departamento';
+  if(matchPath('/colaboradores/:id',pathname))return 'Colaborador';
   if (pathname === "/conta") return "Minha conta";
-  return NAV.find((n) => n.path === pathname)?.label ?? "Página não encontrada";
+  return NAV.find((n) => n.path === pathname)?.label ?? MODULES.find(m=>m.path===pathname)?.label?? "Página não encontrada";
 }
 
 function PeriodSelect() {
@@ -55,7 +57,7 @@ function QuickSearch() {
   const { search } = useFilters();
   const [q, setQ] = useState("");
   return (
-    <label className="relative hidden w-72 lg:block">
+    <label className="relative hidden w-60 xl:block">
       <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-q-mid" aria-hidden />
       <input
         list="rinne-search"
@@ -89,8 +91,16 @@ export function Layout() {
   const me = useMe().data;
   const nav = useNav();
   const groups = [...new Set(nav.map((n) => n.group))];
+  const [collapsed,setCollapsed]=useState<Record<string,boolean>>({});
+  const navigation=useRef<HTMLElement>(null);
   const db = health.data?.database;
-  useEffect(() => setOpen(false), [pathname]);
+  useEffect(()=>{
+    setOpen(false);
+    const active=nav.find(n=>n.path===pathname||(n.path!=='/'&&pathname.startsWith(n.path+'/')));
+    if(active)setCollapsed(c=>c[active.group]?{...c,[active.group]:false}:c);
+    const frame=requestAnimationFrame(()=>navigation.current?.querySelector<HTMLElement>('a[aria-current="page"]')?.scrollIntoView({block:'nearest'}));
+    return ()=>cancelAnimationFrame(frame);
+  },[pathname]);
 
   return (
     <div className="min-h-screen lg:pl-64">
@@ -106,11 +116,11 @@ export function Layout() {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Módulos">
+        <nav ref={navigation} className="flex-1 overflow-y-auto px-3 py-4" aria-label="Módulos">
           {groups.map((g) => (
             <div key={g} className="mb-4">
-              <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">{g}</div>
-              {nav.filter((n) => n.group === g).map((n) => (
+              <button aria-expanded={!collapsed[g]} onClick={()=>setCollapsed(c=>({...c,[g]:!c[g]}))} className="flex w-full items-center justify-between px-3 pb-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60">{g}<ChevronDown size={13} className={collapsed[g]?'-rotate-90':''}/></button>
+              {!collapsed[g]&&nav.filter((n) => n.group === g).map((n) => (
                 <NavLink
                   key={n.id}
                   to={{ pathname: n.path, search }}
@@ -132,9 +142,9 @@ export function Layout() {
           <div className="flex items-center gap-2 font-semibold text-white">
             <Database size={14} className="text-q-orange" aria-hidden /> Conexão de dados
           </div>
-          <p className="mt-2 leading-relaxed text-white/60">PostgreSQL quest_rinne · schemas core, ingest e audit · somente leitura.</p>
+          <p className="mt-2 leading-relaxed text-white/60">Informações financeiras, comerciais e operacionais.</p>
           <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2 text-[11px]">
-            <span className="text-white/40">v1.0 · local</span>
+            <span className="text-white/40">QUEST RINNE 1.0</span>
             <span className={`flex items-center gap-1.5 font-semibold ${db === "CONNECTED" ? "text-q-orange" : "text-white/60"}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${db === "CONNECTED" ? "bg-q-orange" : "border border-white/60"}`} />
               {health.isError ? "API inacessível" : db ? DB_LABEL[db] : "Verificando…"}
@@ -151,7 +161,7 @@ export function Layout() {
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-xs text-q-mid">
-              <span>Quest RINNE</span>
+              <span className="whitespace-nowrap">Quest RINNE</span>
               <span aria-hidden>›</span>
               <span className="truncate text-q-ink">{title}</span>
             </div>
@@ -159,7 +169,7 @@ export function Layout() {
           </div>
           <QuickSearch />
           <PeriodSelect />
-          <div className={`hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold sm:flex ${db === "CONNECTED" ? "border-q-orange/40 text-q-ink" : "border-q-line text-q-mid"}`} title="Estado do banco de dados">
+          <div className={`hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold 2xl:flex ${db === "CONNECTED" ? "border-q-orange/40 text-q-ink" : "border-q-line text-q-mid"}`} title="Disponibilidade dos dados">
             <span className={`h-2 w-2 rounded-full ${db === "CONNECTED" ? "bg-q-orange" : "border border-q-orange"}`} />
             {db ? DB_LABEL[db] : "…"}
           </div>
@@ -168,8 +178,8 @@ export function Layout() {
               <NavLink to="/conta" className="flex items-center gap-2.5" title="Minha conta">
                 <span className="grid h-9 w-9 place-items-center rounded-full bg-q-ink text-xs font-bold text-white">{me.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}</span>
                 <span className="hidden leading-tight xl:block">
-                  <span className="block text-sm font-semibold">{me.name}</span>
-                  <span className="block text-[11px] text-q-mid">{me.role ?? "Sem perfil"}{me.scopeDepartment ? ` · ${me.scopeDepartment}` : ""}</span>
+                  <span className="block max-w-40 truncate text-sm font-semibold" title={me.name}>{me.name}</span>
+                  <span className="block text-[11px] text-q-mid">{me.role ?? "Sem perfil"}{me.scopeDepartment ? ' · Seu departamento' : ''}</span>
                 </span>
               </NavLink>
               <LogoutButton className="hidden rounded-lg px-2 py-1.5 text-xs font-medium text-q-mid hover:bg-q-bg hover:text-q-ink sm:block" />
@@ -180,7 +190,7 @@ export function Layout() {
           <Outlet />
         </main>
         <footer className="border-t border-q-line bg-white px-4 py-4 text-center text-[11px] text-q-mid lg:px-8">
-          QUEST RINNE — dados exclusivamente do PostgreSQL quest_rinne (somente leitura). Datas em America/Sao_Paulo · valores em R$. Nenhum valor é simulado.
+          QUEST RINNE · Gestão financeira, comercial e operacional · Valores em R$ e datas no horário de Brasília.
         </footer>
       </div>
     </div>

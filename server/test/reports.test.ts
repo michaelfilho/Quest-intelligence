@@ -65,7 +65,7 @@ test("sem banco: relatório explicitamente marcado como DADOS INDISPONÍVEIS, se
   const csv = await c.fin.req("/api/reports/financeiro?format=csv");
   assert.match(csv.headers.get("content-disposition")!, /rinne_financeiro_.*\.csv/);
   assert.match(csv.body, /DADOS INDISPONÍVEIS/);
-  assert.match(csv.body, /Receita operacional recebida — origem;;Indisponível/);
+  assert.match(csv.body, /Receita operacional recebida;;Indisponível/);
   const md = await c.fin.req("/api/reports/financeiro?format=md");
   assert.match(md.body, /> \*\*DADOS INDISPONÍVEIS\.\*\*/);
   const bin = Buffer.from(await (await fetch(srv.base + "/api/reports/financeiro?format=xlsx", { headers: { cookie: c.fin.cookie, "x-forwarded-for": c.fin.ip } })).arrayBuffer());

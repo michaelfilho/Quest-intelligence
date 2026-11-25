@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { delta, fmt, fmtDate } from "./lib";
+import { delta, fmt, fmtDate,refreshDelay,analyticsRefresh } from "./lib";
+it('cache e remontagem não adiam o ciclo de atualização nem criam intervalo negativo',()=>{
+  expect(refreshDelay(45000,1000,11000)).toBe(35000);
+  expect(refreshDelay(15000,1000,31000)).toBe(1000);
+  expect(refreshDelay(undefined,1000,1000)).toBe(60000);
+  expect(refreshDelay(undefined,0,100000)).toBe(60000);
+  expect(analyticsRefresh('ERROR',1000,1000)).toBe(false);
+  expect(analyticsRefresh('error',1000,1000)).toBe(false);
+});
 
 // Valores sintéticos apenas para testar a formatação — nunca usados nas telas.
 describe("fmt", () => {

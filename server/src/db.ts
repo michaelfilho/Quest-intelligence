@@ -1,6 +1,7 @@
 import "./env.js";
 import pg from "pg";
 import { readOnce } from "./read-once.js";
+import { analyticsAdmission, integer, queryTelemetry } from './performance.js';
 import type { DbState } from "../../shared/contracts.js";
 
 const warned = new Set<string>();
@@ -37,14 +38,14 @@ export function getPool() {
   if (!pool) {
     pool = new pg.Pool({
       connectionString: url,
-      max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+      max: integer('DATABASE_POOL_MAX',5,2,50),
       connectionTimeoutMillis: 3000,
       idleTimeoutMillis: 30000,
       // Defesa em profundidade: mesmo que a role tenha mais permissões, a sessão é somente leitura.
       options: `-c default_transaction_read_only=on -c statement_timeout=15000 -c TimeZone=${process.env.APP_TIMEZONE ?? "America/Sao_Paulo"}`,
     });
     // Sem este handler, a queda de uma conexão ociosa derrubaria o processo.
-    pool.on("error", (e) => console.error(JSON.stringify({ level: "error", msg: "pg pool", error: e.message })));
+    pool.on("error", () => console.error(JSON.stringify({ level: "error", msg: "pg pool" })));
   }
   return pool;
 }
@@ -52,7 +53,23 @@ export function getPool() {
 export async function q<T extends pg.QueryResultRow>(sql: string, params: unknown[] = []) {
   const p = getPool();
   if (!p) throw new Error("DATABASE_URL não configurado");
-  return readOnce(sql, params, async () => (await p.query<T>(sql, params)).rows);
+  return readOnce(sql, params, async () => {
+    const started=performance.now();let queued=0,waiting=0,acquisition=0,release:(()=>void)|undefined,client:pg.PoolClient|undefined;
+    const heavy=/\b(?:core|ingest|audit)\./i.test(sql);
+    try {
+      if(heavy)release=await analyticsAdmission.enter();
+      queued=performance.now()-started;
+      acquisition=performance.now();client=await p.connect();waiting=performance.now()-acquisition;
+      const result=await client.query<T>(sql,params);
+      queryTelemetry(sql,{durationMs:performance.now()-started,poolWaitMs:waiting,queueWaitMs:queued,rows:result.rows.length,outcome:'ok'});
+      return result.rows;
+    }catch(e){
+      if(heavy&&!release)queued=performance.now()-started;
+      if(acquisition&&!client)waiting=performance.now()-acquisition;
+      queryTelemetry(sql,{durationMs:performance.now()-started,poolWaitMs:waiting,queueWaitMs:queued,rows:0,outcome:(e as {code?:string}).code==='57014'?'timeout':'error'});
+      throw e;
+    }finally{client?.release();release?.();}
+  });
 }
 
 // Estado do banco com cache curto, para não pingar o PostgreSQL a cada indicador.

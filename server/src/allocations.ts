@@ -68,9 +68,11 @@ export async function allocationSource(f:Filters,reader:Reader=q) {
 export const ALLOCATION_METRICS=['despesas_rateadas','despesas_sem_rateio','despesas_rateio_divergente'];
 export async function allocationMetric(id:string,f:Filters,reader:Reader=q):Promise<Computed> {
   const src=await allocationSource(f,reader);
-  const predicate=id==='despesas_rateadas'?"allocation_status='Conciliado'":id==='despesas_sem_rateio'?"allocation_status='Sem rateio'":"allocation_status NOT IN ('Conciliado','Sem rateio')";
-  const [r]=await reader(`WITH source AS (${src.sql}) SELECT sum(valor) FILTER (WHERE ${predicate})::float8 AS value,
-    count(*) FILTER (WHERE ${predicate})::int AS used,count(*)::int AS total FROM source`,src.params);
+  const states={despesas_rateadas:"allocation_status='Conciliado'",despesas_sem_rateio:"allocation_status='Sem rateio'",rateios_divergentes:"allocation_status NOT IN ('Conciliado','Sem rateio')"};
+  const key=id==='despesas_rateadas'||id==='despesas_sem_rateio'?id:'rateios_divergentes';
+  const fields=Object.entries(states).flatMap(([key,predicate])=>[`sum(valor) FILTER(WHERE ${predicate})::float8 AS v_${key}`,`count(*) FILTER(WHERE ${predicate})::int AS n_${key}`]);
+  const [summary]=await reader(`WITH source AS (${src.sql}) SELECT ${fields.join(',')},count(*)::int AS total FROM source`,src.params);
+  const r={value:summary[`v_${key}`],used:summary[`n_${key}`],total:summary.total};
   return {value:Number(r.total)>0?Number(r.value??0):null,recordsUsed:Number(r.used),recordsExcluded:Number(r.total)-Number(r.used),reliability:'EM_RECONCILIACAO',reason:note,temporalField:'payment_date',coverage:`${r.used}/${r.total} lançamentos nesta situação.`,insufficient:!Number(r.total)?'Sem saídas elegíveis no período.':undefined};
 }
 export async function allocationChart(f:Filters,reader:Reader=q) {

@@ -1,6 +1,7 @@
 // Introspecção leve em memória. A aplicação nunca persiste cópias dos dados analíticos.
 import { q, SCHEMAS } from "./db.js";
 import { SourceLimitation } from "./source-errors.js";
+import { integer } from './performance.js';
 
 export type Reader = <T extends Record<string, any>>(sql: string, params: unknown[]) => Promise<T[]>;
 export interface ColumnInfo { schema: string; table: string; column: string; type: string; nullable: string }
@@ -10,7 +11,7 @@ export const numericTypes = new Set(["smallint", "integer", "bigint", "numeric",
 export const temporalTypes = new Set(["date", "timestamp without time zone", "timestamp with time zone"]);
 let cached: { value: SchemaSnapshot; at: number } | undefined;
 let pending: Promise<SchemaSnapshot> | undefined;
-const ttl = 300000;
+const ttl = integer('SCHEMA_CACHE_TTL_MS',300000,1000,3600000);
 
 export async function discoverSchema(reader: Reader = q): Promise<SchemaSnapshot> {
   const schemas = Object.values(SCHEMAS);
@@ -86,6 +87,10 @@ export function validateStatement(s: SchemaSnapshot, sql: string) {
 }
 
 export function prepareStatement(s: SchemaSnapshot, sql: string) {
+  // Projeções opcionais usam a coluna descoberta, sem serializar a linha inteira.
+  const tables:Record<string,string>={t:'time_entries',i:'invoices',f:'financial_entries'};
+  sql=sql.replace(/to_jsonb\(([tif])\)->>'([a-z_][a-z0-9_]*)'/g,(_all,alias:string,field:string)=>
+    s.columns.some(c=>c.schema===SCHEMAS.core&&c.table===tables[alias]&&c.column===field)?`${alias}.${field}::text`:'NULL::text');
   if(sql.includes('/* invoice_document_link */')) {
     for(const [table,fields]of [['clients',['iclips_id','document']],['invoices',['client_document']]] as const) {
       for(const field of fields)if(!s.columns.some(c=>c.schema==='core'&&c.table===table&&c.column===field))throw new SourceLimitation(`Campo ausente: ${table}.${field} para vínculo por documento.`);

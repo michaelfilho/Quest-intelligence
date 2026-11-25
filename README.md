@@ -34,6 +34,10 @@ docs/     documentação
 
 ## Documentação
 
+[Experiência gerencial: páginas, abas, navegações e pendências](docs/EXPERIENCIA_GERENCIAL.md)
+
+[Performance da fase 3](docs/PERFORMANCE.md) · [Benchmarks sintéticos e limites da validação](docs/BENCHMARKS.md)
+
 [Diagnóstico desta integração](docs/DIAGNOSTICO_INTEGRACAO.md): inventário, consultas implementadas, testes, limitações e roteiro de atualização da instalação existente.
 
 [Instalação local](docs/INSTALACAO_LOCAL.md) · [Arquitetura](docs/ARQUITETURA.md) · [Segurança](docs/SEGURANCA.md) · [API](docs/API.md) · [Integração PostgreSQL](docs/INTEGRACAO_POSTGRESQL.md) · [Dicionário de indicadores](docs/DICIONARIO_INDICADORES.md) · [Testes](docs/TESTES.md) · [Homologação local](docs/HOMOLOGACAO_LOCAL.md) · [Deploy na VPS](docs/DEPLOY_VPS.md) · [Backup e rollback](docs/BACKUP_ROLLBACK.md) · [Pendências de produção](docs/PENDENCIAS_PRODUCAO.md)

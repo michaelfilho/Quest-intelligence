@@ -10,10 +10,33 @@ import type { Filters } from "../../shared/contracts.js";
 const pg = new PGlite();
 const query: Query = async <T extends Record<string, any>>(sql: string, params: unknown[]) => (await pg.query<T>(sql, params)).rows;
 const f: Filters = { start: "2026-01-01", end: "2026-01-31", compare: false };
+test('agregado consolidado equivale ao SQL anterior para valor, usados e excluídos em vários escopos',async()=>{
+  for(const scope of [f,{...f,employee:'1'},{...f,department:'B'},{...f,client:'10'},{...f,start:'2099-01-01',end:'2099-01-31'}]){
+    for(const id of ['horas_registradas','horas_retrabalho','retrabalho','percentual_retrabalho','colaboradores_ativos','projetos_atendidos','clientes_ativos']){
+      const stmt=metricStatement(id,scope),[old]=await query(stmt.sql,stmt.params),now=await computeMetric(id,scope,query);
+      const zero=id==='horas_retrabalho'&&old.value==null&&Number(old.base_used)>0&&Number(old.missing_flags)===0;
+      assert.equal(now.value,zero?0:old.value==null?null:Number(old.value),`${id} valor`);
+      assert.equal(now.recordsUsed,Number(old.used),`${id} usados`);assert.equal(now.recordsExcluded,Number(old.excluded),`${id} excluídos`);
+    }
+  }
+});
 before(async () => {
   await initialiseFixtures(pg);
 });
 after(async () => pg.close());
+test('predicado temporal sem função na coluna preserva fronteiras e timezone nos três tipos',async()=>{
+  try{
+    for(const zone of ['America/Sao_Paulo','UTC','America/New_York']){
+      await pg.query('SELECT set_config($1,$2,false)',['TimeZone',zone]);
+      for(const type of ['date','timestamp','timestamptz']){
+        const [r]=await query(`WITH samples AS (SELECT x::${type} AS value FROM unnest(ARRAY['2026-01-01','2026-01-31 23:59:59','2026-02-01','2026-02-01 02:59:59+00',NULL]) x)
+          SELECT count(*) FILTER(WHERE ((value::timestamptz>=($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo') AND value::timestamptz<(($2::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo')) IS DISTINCT FROM
+            (value>=($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo') AND value<(($2::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo'))))::int AS differences FROM samples`,[f.start,f.end]);
+        assert.equal(r.differences,0,`${zone} ${type}`);
+      }
+    }
+  }finally{await pg.query('SELECT set_config($1,$2,false)',['TimeZone','America/Sao_Paulo']);}
+});
 
 test("PostgreSQL: duração única, fallback, nulos, negativos, inconsistências e sem fanout", async () => {
   const r = await computeMetric("horas_registradas", f, query);

@@ -12,6 +12,7 @@ import { filtersSchema } from "./filters.js";
 import { resolveModule, resolveTable } from "./services.js";
 import { audit } from "./store.js";
 import { xlsx, type Cell } from "./xlsx.js";
+import {MANAGEMENT_VIEWS} from '../../shared/management.js';
 
 export interface ReportDef {
   id: string;
@@ -24,6 +25,8 @@ export interface ReportDef {
 }
 
 export const REPORT_DEFS: ReportDef[] = [
+  {id:'projetos',title:'Relatório de projetos',description:'Projetos, clientes, prazos, horas e componentes financeiros disponíveis.',module:'projetos',tables:['gestao_projetos'],requires:['projetos.view']},
+  {id:'colaboradores',title:'Relatório de colaboradores',description:'Horas, projetos atendidos e retrabalho por colaborador.',module:'colaboradores',tables:['colaboradores'],requires:['departamentos.view']},
   { id: "executivo", title: "Relatório executivo", description: "Receitas, despesas, resultado, produção e clientes ativos.", module: "executivo", tables: ["top_clientes_resultado", "top_projetos_menor_margem"], requires: ["estrategicos.view"] },
   { id: "financeiro", title: "Relatório financeiro", description: "Faturamento, recebimento e competência separados; despesas e custos.", module: "financeiro", tables: ["receita_por_cliente", "resultado_mensal"], requires: ["financeiro.view"] },
   { id: "rentabilidade", title: "Relatório de rentabilidade", description: "Resultado e margens por cliente, projeto e serviço.", module: "rentabilidade", tables: ["rentabilidade_clientes", "rentabilidade_projetos", "custo_por_servico"], requires: ["rentabilidade.view"] },
@@ -38,6 +41,9 @@ export const REPORT_DEFS: ReportDef[] = [
 
 export const reportAllowed = (u: SessionUser, d: ReportDef) => u.permissions.has("relatorios.view") && d.requires.every((p) => u.permissions.has(p)) && (!d.module || moduleAllowed(u, moduleById(d.module)!));
 
+const order=['executivo','financeiro','rentabilidade','clientes','projetos','colaboradores','departamentos','producao','eficiencia','capacidade','contratos','qualidade'];
+REPORT_DEFS.sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));
+REPORT_DEFS.find(d=>d.id==='executivo')!.indicators=MANAGEMENT_VIEWS.executivo[0].indicators;
 const nf = (o: Intl.NumberFormatOptions) => new Intl.NumberFormat("pt-BR", o);
 export function fmtValue(v: unknown, unit: Unit | string) {
   if (v === null || v === undefined || v === "") return "—";
@@ -83,6 +89,7 @@ export async function buildReport(u: SessionUser, d: ReportDef, f: Filters) {
   }
   const dataAvailable = indicators.some((i) => i.status === "OK");
   const limitations = [
+    ...tables.filter(t=>(t.rows as unknown[]).length<Number(t.total)).map(t=>`${t.label}: esta exportação contém ${(t.rows as unknown[]).length} de ${t.total} registros; refine os filtros para reduzir o volume.`),
     ...(state !== "CONNECTED" ? ["Banco de dados indisponível: este relatório NÃO contém valores calculados."] : []),
     ...(indicators.some((i) => i.status === "NOT_IMPLEMENTED" || i.status === "INSUFFICIENT_DATA") ? ["Há indicadores sem fonte, vínculo ou semântica gerencial suficiente; observe o motivo individual."] : []),
     ...indicators.filter(i => i.reason).map(i => `${i.label}: ${i.reason}`),
@@ -173,7 +180,7 @@ export function reportsRouter() {
       if (format === "md") return res.set({ "Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.md"` }).send(toMarkdown(rep));
       return res.set({ "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${name}.xlsx"` }).send(toXlsx(rep));
     } catch (e) {
-      console.error(JSON.stringify({ level: "error", scope: "reports", msg: (e as Error).message }));
+      console.error(JSON.stringify({ level: "error", scope: "reports", code:'REPORT_FAILURE' }));
       res.status(500).json({ error: "Erro ao gerar o relatório" });
     }
   });

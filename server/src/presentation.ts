@@ -3,6 +3,14 @@ import {q} from './db.js';
 
 export const schemaFor = (reader: Reader, provided?: SchemaSnapshot) => provided ? Promise.resolve(provided) : reader === analyticsQuery||reader===q ? runtimeSchema() : discoverSchema(reader);
 const text = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+export function registryJoin(s:SchemaSnapshot,table:string,key:string,id:string,alias:string,fallback:string,extras:string[]=[]){
+  const has=(column:string)=>s.columns.some(c=>c.schema==='core'&&c.table===table&&c.column===column);
+  if(!has(key))return {join:'',value:text(fallback),extras:Object.fromEntries(extras.map(k=>[k,'NULL::text']))};
+  const projections=extras.filter(has).map(k=>`CASE WHEN count(*)=1 THEN max(${k}::text) END AS ${k}`);
+  const name=has('name')?`max(${descriptiveName('name')})`:'NULL::text';
+  return {join:`LEFT JOIN (SELECT ${key}::text AS entity_key,CASE WHEN count(*)>1 THEN 'Cadastro com chave duplicada' ELSE ${name} END AS entity_name${projections.length?','+projections.join(','):''} FROM core.${table} GROUP BY ${key}::text) ${alias} ON ${alias}.entity_key=(${id})::text`,
+    value:has('name')?`coalesce(${alias}.entity_name,${text(fallback)})`:text(fallback),extras:Object.fromEntries(extras.map(k=>[k,has(k)?`${alias}.${k}`:'NULL::text']))};
+}
 export const descriptiveName=(expr:string)=>`CASE WHEN btrim(${expr}::text)!~'^[0-9]+$' THEN nullif(btrim(${expr}::text),'') END`;
 export function nameSQL(s: SchemaSnapshot, table: string, key: string, id: string, fallback: string) {
   const cols = s.columns.filter(c => c.schema === 'core' && c.table === table);

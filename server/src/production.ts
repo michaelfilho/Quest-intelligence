@@ -1,7 +1,7 @@
 import type {Filters} from '../../shared/contracts.js';
 import {sourceStatement,eligibleTime,paginate,type Query} from './analytics.js';
 import {analyticsQuery} from './schema.js';
-import {schemaFor,labelledTime,nameSQL} from './presentation.js';
+import {schemaFor,labelledTime,registryJoin} from './presentation.js';
 import {SourceLimitation} from './source-errors.js';
 import type {Page,Computed} from './mappings.js';
 const note='Peças com apontamento válido no período, vínculo unívoco peça/projeto e nome de cadastro; não são peças entregues. Contagens por departamento/cliente são distintas dentro de cada grupo e não devem ser somadas como únicos globais. Códigos de status de peça não são interpretados.';
@@ -29,10 +29,10 @@ export async function pieceChart(dim:'client'|'department',f:Filters,reader:Quer
 export async function pieceTable(f:Filters,p:Page,reader:Query=analyticsQuery) {
   const src=await pieceSource(f,reader),sort=p.sort??'peca';
   if(!['peca','projeto','cliente','horas','apontamentos'].includes(sort))throw new SourceLimitation('Coluna de peça indisponível.');
-  const hasCatalog=src.s.columns.some(c=>c.schema==='core'&&c.table==='job_pieces'&&c.column==='catalog_piece_id');
-  const catalogKey=hasCatalog?'(SELECT CASE WHEN count(*)=1 THEN max(p.catalog_piece_id::text) END FROM core.job_pieces p WHERE p.iclips_id::text=g.job_piece_id)':'NULL::text';
+  const piece=registryJoin(src.s,'job_pieces','iclips_id','g.job_piece_id','pn','Peça sem nome',['catalog_piece_id']);
+  const catalog=registryJoin(src.s,'piece_catalog','iclips_id',piece.extras.catalog_piece_id,'pcn','Catálogo sem vínculo/nome');
   return {...await paginate(`WITH source AS (${src.sql}), grouped AS (SELECT job_piece_id,max(job_name) AS projeto,max(client_name) AS cliente,
     string_agg(DISTINCT department_name,', ') AS departamentos,sum(seconds)/3600.0 AS horas,count(*)::int AS apontamentos FROM source GROUP BY job_piece_id)
-    SELECT job_piece_id AS id,${nameSQL(src.s,'job_pieces','iclips_id','g.job_piece_id','Peça sem nome')} AS peca,
-    ${nameSQL(src.s,'piece_catalog','iclips_id',catalogKey,'Catálogo sem vínculo/nome')} AS catalogo,projeto,cliente,departamentos,horas,apontamentos FROM grouped g`,src.params,p,`${sort} ${p.dir==='desc'?'DESC':'ASC'} NULLS LAST,id`,reader),reason:note};
+    SELECT job_piece_id AS id,${piece.value} AS peca,
+    ${catalog.value} AS catalogo,projeto,cliente,departamentos,horas,apontamentos FROM grouped g ${piece.join} ${catalog.join}`,src.params,p,`${sort} ${p.dir==='desc'?'DESC':'ASC'} NULLS LAST,id`,reader),reason:note};
 }

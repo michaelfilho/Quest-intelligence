@@ -1,5 +1,5 @@
 import type { Filters } from '../../shared/contracts.js';
-import { sourceStatement, eligibleTime, paginate, type Query } from './analytics.js';
+import { sourceStatement, eligibleTime, paginate, type Query, type Statement } from './analytics.js';
 import { analyticsQuery, numericTypes } from './schema.js';
 import { schemaFor, labelledTime } from './presentation.js';
 import { SourceLimitation } from './source-errors.js';
@@ -7,7 +7,7 @@ import type { Computed, Page } from './mappings.js';
 import { activityKeys,projectActivityKeys } from './activity-profile.js';
 
 // Chaves fechadas do contrato. Nunca extrair identificadores de texto livre/source_path.
-export async function activitySource(f: Filters, reader: Query = analyticsQuery) {
+export async function activitySource(f: Filters, reader: Query = analyticsQuery,providedSource?:Statement) {
   const s = await schemaFor(reader);
   const profile=activityKeys(s);
   const has = (table: string, column: string) => s.columns.some(c => c.schema === 'core' && c.table === table && c.column === column);
@@ -21,28 +21,37 @@ export async function activitySource(f: Filters, reader: Query = analyticsQuery)
     if (kind==='WORKFLOW' && !['iclips_id','job_id'].every(c=>has('job_pieces',c))) continue;
     const estimate = numeric(table,'estimated_minutes') ? 'estimated_minutes::numeric' : 'NULL::numeric';
     const name = has(table,'name') ? "max(nullif(btrim(name::text),''))" : 'NULL::text';
-    const jobKey=kind==='TASK'?'a.job_id::text':"(SELECT CASE WHEN count(*)=1 THEN max(p.job_id::text) END FROM core.job_pieces p WHERE p.iclips_id::text=a.job_piece_id::text)";
-    arms.push(`SELECT '${kind}'::text AS kind, ${parent}::text AS parent_key, iclips_id::text AS child_key,
+    const description=has(table,'description')?"max(nullif(btrim(a.description::text),''))":'NULL::text';
+    const jobKey=kind==='TASK'?'a.job_id::text':'max(piece_keys.job_key)';
+    const pieces=kind==='TASK'?'':`LEFT JOIN (SELECT iclips_id::text AS piece_key,CASE WHEN count(*)=1 THEN max(job_id::text) END AS job_key FROM core.job_pieces GROUP BY iclips_id::text) piece_keys ON piece_keys.piece_key=a.job_piece_id::text`;
+    arms.push(`SELECT '${kind}'::text AS kind, a.${parent}::text AS parent_key, a.iclips_id::text AS child_key,
       ${jobKey} AS job_key,
-      CASE WHEN count(*)=1 THEN max(${estimate}) END AS minutes, ${name} AS name, count(*)::int AS matches
-      FROM core.${table} a GROUP BY ${parent},iclips_id`);
+      CASE WHEN count(*)=1 THEN max(${estimate}) END AS minutes, ${name} AS name,CASE WHEN count(*)=1 THEN ${description} END AS description, count(*)::int AS matches
+      FROM core.${table} a ${pieces}
+      WHERE EXISTS (SELECT 1 FROM work w WHERE w.kind='${kind}' AND w.parent_key=a.${parent}::text AND w.child_key=a.iclips_id::text)
+      GROUP BY a.${parent},a.iclips_id`);
   }
   if (!arms.length) throw new SourceLimitation('Relacionamento de atividade ausente: exige chaves compostas explícitas de tarefa ou etapa.');
   const includeCost=numeric('time_entries','labor_cost');
-  const src = sourceStatement('time',f,undefined,includeCost);
-  return { kinds:arms.map(a=>a.includes("'WORKFLOW'")?'WORKFLOW':'TASK'),params: src.params, sql: `WITH source AS (${labelledTime(projectActivityKeys(src.sql,profile.keys),s)}), valid_time AS (
+  const src = providedSource??sourceStatement('time',f,undefined,includeCost);
+  return { kinds:arms.map(a=>a.includes("'WORKFLOW'")?'WORKFLOW':'TASK'),params: src.params, sql: `WITH source AS (${projectActivityKeys(src.sql,profile.keys)}), valid_time AS (
     SELECT *, CASE WHEN source_kind='TASK' THEN job_id::text WHEN source_kind='WORKFLOW' THEN job_piece_id END AS parent_key,
       CASE WHEN source_kind='TASK' THEN task_id WHEN source_kind='WORKFLOW' THEN workflow_step_id END AS child_key
     FROM source WHERE ${eligibleTime}
-  ), work AS (
-    SELECT source_kind AS kind,parent_key,child_key, sum(seconds)/3600.0 AS hours, count(*)::int AS entries,
-      ${includeCost ? "sum(labor_cost) FILTER (WHERE labor_cost::text NOT IN ('NaN','Infinity','-Infinity'))" : 'NULL::numeric'} AS cost,
+  ), work_facts AS (
+    SELECT source_kind AS kind,parent_key,child_key,employee_id,department_id,job_id,NULL::text AS client_id,NULL::text AS client_group_id,
+      department_name_snapshot,
+      sum(seconds) AS seconds,sum(seconds) FILTER(WHERE is_rework IS TRUE) AS rework_seconds,count(*)::int AS entries,min(started_at) AS first_entry,max(started_at) AS last_entry,
+      ${includeCost ? "sum(labor_cost) FILTER (WHERE labor_cost::text NOT IN ('NaN','Infinity','-Infinity'))" : 'NULL::numeric'} AS cost
+    FROM valid_time WHERE source_kind IN ('TASK','WORKFLOW') AND parent_key IS NOT NULL AND child_key IS NOT NULL
+    GROUP BY source_kind,parent_key,child_key,employee_id,department_id,job_id,department_name_snapshot
+  ), work_labels AS (${labelledTime('SELECT * FROM work_facts',s)}), work AS (
+    SELECT kind,parent_key,child_key,sum(seconds)/3600.0 AS hours,sum(rework_seconds)/3600.0 AS rework_hours,sum(entries)::int AS entries,sum(cost) AS cost,min(first_entry) AS first_entry,max(last_entry) AS last_entry,
       string_agg(DISTINCT employee_name, ', ') AS employees, string_agg(DISTINCT department_name, ', ') AS departments,
       max(job_name) AS project, CASE WHEN count(DISTINCT job_id)=1 THEN max(job_id) END AS project_id
-    FROM valid_time WHERE source_kind IN ('TASK','WORKFLOW') AND parent_key IS NOT NULL AND child_key IS NOT NULL
-    GROUP BY source_kind,parent_key,child_key
+    FROM work_labels GROUP BY kind,parent_key,child_key
   ), estimates AS (${arms.join(' UNION ALL ')}), activities AS (
-    SELECT w.*, e.matches, CASE WHEN e.matches=1 THEN coalesce(e.name,'Atividade sem nome') WHEN e.matches>1 THEN 'Atividade com chave duplicada' ELSE 'Atividade sem cadastro' END AS name,
+    SELECT w.*, e.matches,e.description, CASE WHEN e.matches=1 THEN coalesce(e.name,'Atividade sem nome') WHEN e.matches>1 THEN 'Atividade com chave duplicada' ELSE 'Atividade sem cadastro' END AS name,
       CASE WHEN ${f.employee||f.department?'FALSE':'TRUE'} AND e.matches=1 AND e.minutes>0 AND e.minutes::text NOT IN ('NaN','Infinity','-Infinity') THEN e.minutes/60.0 END AS planned
     FROM work w LEFT JOIN estimates e ON e.kind=w.kind AND e.parent_key=w.parent_key AND e.child_key=w.child_key AND e.job_key=w.project_id::text
   )` };
@@ -84,7 +93,8 @@ export async function workedActivities(f: Filters,p:Page,reader:Query=analyticsQ
   const src=await activitySource(f,reader); const sort=p.sort??'atividade';
   if (!['atividade','projeto','departamento','responsavel','horas','horas_previstas'].includes(sort)) throw new SourceLimitation('Campo de atividade indisponível para ordenação.');
   const r=await paginate(`${src.sql} SELECT kind||':'||parent_key||':'||child_key AS id,kind AS origem,
+    parent_key AS activity_parent,child_key AS activity_child,description AS descricao,first_entry AS primeiro_registro,last_entry AS ultimo_registro,rework_hours AS horas_retrabalho,
     project AS projeto,project_id AS projeto_id,name AS atividade,departments AS departamento,employees AS responsavel,
-    hours AS horas,planned AS horas_previstas,cost AS custo_registrado,CASE WHEN planned IS NOT NULL THEN hours-planned END AS desvio FROM activities`,src.params,p,`${sort} ${p.dir==='desc'?'DESC':'ASC'} NULLS LAST,id`,reader);
+    hours AS horas,planned AS horas_previstas,cost AS custo_registrado,CASE WHEN planned IS NOT NULL THEN hours-planned END AS desvio FROM activities`,src.params,p,`${sort} ${p.dir==='desc'?'DESC':'ASC'} NULLS LAST,origem,activity_parent,activity_child`,reader);
   return {...r,reason:note};
 }

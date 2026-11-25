@@ -6,14 +6,14 @@ import { numericTypes, runtimeSchema, temporalTypes, validateJobIdentity, valida
 import { SourceLimitation } from "./source-errors.js";
 import { paginate } from "./analytics.js";
 import type { Computed, Page } from "./mappings.js";
-import { nameSQL } from "./presentation.js";
+import { nameSQL,registryJoin } from "./presentation.js";
 import { z } from 'zod';
 
 type ParentField = "parent_entry_id" | "parent_id" | "parent_entry_source_id";
 type ParentTarget = "iclips_id" | "source_id" | "entry_source_id";
 export interface CashProfile {
   type: "entry_type" | "type"; parent: ParentField | null; target?: ParentTarget;
-  candidates: ParentTarget[]; declaredTarget?: ParentTarget; hasCompetence: boolean; hasJob: boolean; hasCategory: boolean;hasAccount?:boolean;
+  candidates: ParentTarget[]; declaredTarget?: ParentTarget; hasCompetence: boolean; hasJob: boolean; hasCategory: boolean;hasAccount?:boolean;hasId?:boolean;
 }
 export function cashProfile(s: SchemaSnapshot): CashProfile {
   const cols = s.columns.filter(c => c.schema === SCHEMAS.core && c.table === "financial_entries");
@@ -45,7 +45,7 @@ export function cashProfile(s: SchemaSnapshot): CashProfile {
   }
   return { type: types[0] as CashProfile["type"], parent: (parents[0] as ParentField) ?? null, candidates, declaredTarget,
     hasCompetence: cols.some(c => c.column === "competence_date"&&temporalTypes.has(c.type)), hasJob: cols.some(c => c.column === "job_id"),
-    hasCategory: cols.some(c => c.column === "category_id" && idTypes.has(c.type)),hasAccount:cols.some(c=>c.column==='account_id'&&idTypes.has(c.type)) };
+    hasCategory: cols.some(c => c.column === "category_id" && idTypes.has(c.type)),hasAccount:cols.some(c=>c.column==='account_id'&&idTypes.has(c.type)),hasId:cols.some(c=>c.column==='id') };
 }
 
 export async function validatedCashProfile(s: SchemaSnapshot, reader: Reader, filters?: Filters,temporal:'payment_date'|'competence_date'='payment_date'): Promise<CashProfile> {
@@ -96,7 +96,7 @@ export async function validatedCashProfile(s: SchemaSnapshot, reader: Reader, fi
   return { ...profile, target: valid[0] };
 }
 function assertCashFilters(f: Filters) {
-  for (const k of ["department", "employee", "service", "status"] as const) if (f[k]) throw new SourceLimitation(`Filtro ${k} não comprovado para movimentações financeiras.`);
+  for (const k of ["department", "employee", "service", "status"] as const) if (f[k]) throw new SourceLimitation(`Filtro não aplicável: ${k} não comprovado para movimentações financeiras.`);
 }
 export async function scopedProfile(f: Filters, reader: Reader, provided?: SchemaSnapshot,temporal:'payment_date'|'competence_date'='payment_date') {
   assertCashFilters(f); // não consultar dados globais para um escopo que não pode ser aplicado
@@ -113,20 +113,22 @@ export function cashSource(f: Filters, profile: CashProfile,temporal:'payment_da
   assertCashFilters(f);
   if(temporal==='competence_date'&&!profile.hasCompetence)throw new SourceLimitation('Campo ausente/incompatível: competence_date temporal.');
   const params: unknown[] = [f.start, f.end];
-  const predicates = [`f.${temporal}::timestamptz >= ($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo')`,
-    `f.${temporal}::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo')`];
+  const predicates = [`f.${temporal} >= ($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo')`,
+    `f.${temporal} < (($2::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo')`];
   for (const [key, field] of [["client", "client_id"], ["group", "client_group_id"], ["project", "iclips_id"]] as const) {
     if (f[key]) {
       if (!profile.hasJob) throw new SourceLimitation("Vínculo com projeto ausente no financeiro.");
       params.push(f[key]); predicates.push(`EXISTS(SELECT 1 FROM core.jobs j WHERE j.iclips_id = f.job_id AND j.${field}::text = $${params.length})`);
     }
   }
-  const standalone = profile.parent ? `f.${profile.parent} IS NULL AND NOT EXISTS(SELECT 1 FROM core.financial_entries child WHERE child.${profile.parent}::text = f.${profile.target}::text)` : "FALSE";
+  if(f.category){if(!profile.hasCategory)throw new SourceLimitation('Categoria financeira ainda não integrada.');params.push(f.category);predicates.push(`f.category_id::text=$${params.length}`);}
+  const standalone = profile.parent ? `f.${profile.parent} IS NULL AND parent_keys.parent_key IS NULL` : "FALSE";
+  const parents=profile.parent?`LEFT JOIN (SELECT DISTINCT ${profile.parent}::text AS parent_key FROM core.financial_entries WHERE ${profile.parent} IS NOT NULL) parent_keys ON parent_keys.parent_key=f.${profile.target}::text`:'';
   return { params, sql: `SELECT f.iclips_id, ${profile.hasJob ? "f.job_id" : "NULL::text AS job_id"}, ${profile.hasCategory ? "f.category_id" : "NULL::text AS category_id"}, f.payment_date, ${profile.hasCompetence ? "f.competence_date" : "NULL::date AS competence_date"},
-    to_jsonb(f)->>'id' AS row_id,
+    ${profile.hasId?'f.id::text':'NULL::text'} AS row_id,
     ${profile.hasAccount?'f.account_id':'NULL::text AS account_id'},
     f.${profile.type}::text AS tipo, CASE WHEN f.amount::text NOT IN ('NaN','Infinity','-Infinity') THEN f.amount::numeric ELSE NULL END AS valor, (${standalone}) AS standalone
-    FROM core.financial_entries f WHERE ${predicates.join(" AND ")}` };
+    FROM core.financial_entries f ${parents} WHERE ${predicates.join(" AND ")}` };
 }
 export const CASH_METRICS = ["entradas_realizadas", "saidas_realizadas", "saldo_movimentacoes"];
 const note = "Movimentações preliminares, sem classificação operacional nem conciliação com conflitos de publicação. Famílias pai/filho excluídas integralmente. Valores assinados preservados. Não representa lucro, rentabilidade ou receita operacional validada.";
@@ -158,13 +160,13 @@ export async function cashRecords(id: string, f: Filters, p: Page, reader: Reade
   const sort = p.sort ?? "data";
   if (!["id", "data", "competencia", "tipo", "valor",'cliente','projeto','categoria','conta'].includes(sort)) throw new SourceLimitation("Ordenação financeira sem campo comprovado.");
   const snapshot=schema??await runtimeSchema();
-  const jobClient=['iclips_id','client_id'].every(column=>snapshot.columns.some(c=>c.schema==='core'&&c.table==='jobs'&&c.column===column))?
-    '(SELECT CASE WHEN count(*)=1 THEN max(j.client_id::text) END FROM core.jobs j WHERE j.iclips_id::text=source.job_id::text)':'NULL::text';
-  const r = await paginate(`WITH source AS (${src.sql}) SELECT iclips_id AS id, job_id AS projeto_id, ${nameSQL(snapshot,'jobs','iclips_id','source.job_id','Projeto sem nome')} AS projeto,
-    ${nameSQL(snapshot,'clients','iclips_id',jobClient,'Cliente sem nome')} AS cliente,
-    ${nameSQL(snapshot,'financial_categories','iclips_id','source.category_id','Categoria sem nome')} AS categoria,
-    ${nameSQL(snapshot,'financial_accounts','iclips_id','source.account_id','Conta sem nome')} AS conta,
-    payment_date AS data, competence_date AS competencia, tipo, valor, 'Preliminar / em reconciliação'::text AS situacao FROM source
+  const job=registryJoin(snapshot,'jobs','iclips_id','source.job_id','jn','Projeto sem nome',['client_id']);
+  const client=registryJoin(snapshot,'clients','iclips_id',job.extras.client_id,'cn','Cliente sem nome');
+  const category=registryJoin(snapshot,'financial_categories','iclips_id','source.category_id','catn','Categoria sem nome');
+  const account=registryJoin(snapshot,'financial_accounts','iclips_id','source.account_id','an','Conta sem nome');
+  const r = await paginate(`WITH source AS (${src.sql}) SELECT iclips_id AS id, job_id AS projeto_id, ${job.value} AS projeto,
+    ${client.value} AS cliente,${category.value} AS categoria,${account.value} AS conta,
+    payment_date AS data, competence_date AS competencia, tipo, valor, 'Preliminar / em reconciliação'::text AS situacao FROM source ${job.join} ${client.join} ${category.join} ${account.join}
     WHERE standalone AND valor IS NOT NULL AND payment_date::timestamptz <= CURRENT_TIMESTAMP AND tipo IN ('Entrada','Saída') ${type}`,
     src.params, p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST, id`, reader);
   return { ...r, reliability: "EM_RECONCILIACAO" as const, reason: note };

@@ -15,12 +15,13 @@ import {workedPiecesMetric,pieceChart,pieceTable} from './production.js';
 import {STATUS_OBSERVATIONS,observedStatusMetric,observedStatusChart,calendarMetric,calendarTable} from './project-observations.js';
 import {publicationMetric,publicationsTable,conflictDetails} from './publications.js';
 import {runtimeSchema} from './schema.js';
+import {cashPeriods,entitySummary,resultEvolution} from './management.js';
 
 export type Computed = Pick<IndicatorResult, "value" | "recordsUsed" | "recordsExcluded" | "exclusions" | "updatedAt" | "reason" | "temporalField" | "coverage"> & {
   reliability: Reliability;
   insufficient?: string; // preenchido quando a fonte não permite calcular → DADOS INSUFICIENTES
 };
-export type Page = { page: number; pageSize: number; sort?: string; dir?: "asc" | "desc" };
+export type Page = { page: number; pageSize: number; sort?: string; dir?: "asc" | "desc";search?:string;searchColumns?:string[];dreGroup?:string; activity?:{kind:'TASK'|'WORKFLOW';parent:string;child:string} };
 export type Rows = Pick<TableResult, "rows" | "total" | "reason"> & { reliability: Reliability };
 
 export interface IndicatorImpl {
@@ -71,12 +72,19 @@ chartImpls.receitas_vs_despesas=async f=>{const r=await dreMonthly(f);return {..
 chartImpls.faturado_vs_recebido=billingVersusReceipts;
 chartImpls.despesas_por_centro_custo=allocationChart;
 chartImpls.status_atual_projetos=observedStatusChart;
+chartImpls.evolucao_resultado=resultEvolution;
+chartImpls.top_clientes_faturamento=async f=>{const r=await invoiceClientTable(f,{page:1,pageSize:10,sort:'faturado',dir:'desc'});return {series:['faturamento'],points:r.rows.map(row=>({label:String(row.cliente),faturamento:Number(row.faturado)})),reliability:r.reliability,reason:r.reason};};
 chartImpls.pecas_por_cliente=f=>pieceChart('client',f);
 chartImpls.pecas_por_departamento=f=>pieceChart('department',f);
 for (const id of Object.keys(COST_CHARTS)) chartImpls[id]=f=>costChart(id,f);
 for (const id of CASH_DIMENSION_CHARTS) chartImpls[id] = f => cashDimensionChart(id,f);
 export const tableImpls: Partial<Record<string, TableImpl>> = Object.fromEntries(TIME_TABLES.map(id => [id, (f: Filters, p: Page) => timeTable(id, f, p)]));
 tableImpls.clientes = clientTable;
+tableImpls.gestao_clientes=(f,p)=>entitySummary('client',f,p);
+tableImpls.gestao_projetos=(f,p)=>entitySummary('project',f,p);
+tableImpls.projetos_por_cliente=(f,p)=>entitySummary('group',f,p);
+tableImpls.caixa_diario=(f,p)=>cashPeriods('day',f,p);
+tableImpls.caixa_mensal=(f,p)=>cashPeriods('month',f,p);
 tableImpls.conflitos=conflictsTable;
 tableImpls.vinculos_centros_custo=async(f,p)=>{
   const s=await runtimeSchema();

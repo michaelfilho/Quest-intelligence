@@ -7,9 +7,10 @@ import {SourceLimitation} from './source-errors.js';
 import type {Computed,Page} from './mappings.js';
 export const STATUS_OBSERVATIONS:Record<string,string>={projetos_status_finalizado:'Finalizado',projetos_status_autorizado:'Autorizado',projetos_status_standby:'Stand By',projetos_status_cancelado:'Cancelado',projetos_status_proposta:'Proposta Comercial',projetos_status_concorrencia:'Concorrência'};
 export async function statusSnapshot(f:Filters,reader:Reader=q) {
+  if(f.status&&f.statusSource==='invoices')throw new SourceLimitation('Filtro não aplicável: situação de nota fiscal não representa status de projeto.');
   const s=await schemaFor(reader),params:unknown[]=[],where:string[]=[];
   const required=['iclips_id','status_text'];
-  for(const key of ['department','service'] as const)if(f[key])throw new SourceLimitation(`Filtro ${key} sem relacionamento comprovado no estado atual do projeto.`);
+  for(const key of ['department','service','category'] as const)if(f[key])throw new SourceLimitation(`Filtro ${key} sem relacionamento comprovado no estado atual do projeto.`);
   for(const [key,column]of [['client','client_id'],['group','client_group_id'],['project','iclips_id'],['status','status_text']] as const)if(f[key]){required.push(column);params.push(f[key]);where.push(`j.${column}::text=$${params.length}`);}
   if(f.employee){required.push('principal_employee_id','auxiliary_employee_id');params.push(f.employee);where.push(`(j.principal_employee_id::text=$${params.length} OR j.auxiliary_employee_id::text=$${params.length})`);}
   if(!required.every(column=>s.columns.some(c=>c.schema==='core'&&c.table==='jobs'&&c.column===column)))throw new SourceLimitation('Campo ausente no estado atual do projeto ou filtro selecionado.');
@@ -17,8 +18,10 @@ export async function statusSnapshot(f:Filters,reader:Reader=q) {
   return {params,sql:`SELECT j.iclips_id,j.status_text FROM core.jobs j ${where.length?'WHERE '+where.join(' AND '):''}`};
 }
 export async function observedStatusMetric(id:string,f:Filters,reader:Reader=q):Promise<Computed> {
-  const src=await statusSnapshot(f,reader),status=STATUS_OBSERVATIONS[id];
-  const [r]=await reader(`WITH source AS (${src.sql}) SELECT count(*) FILTER (WHERE status_text=$${src.params.length+1})::int AS value,count(*)::int AS total FROM source`,[...src.params,status]);
+  const src=await statusSnapshot(f,reader),status=STATUS_OBSERVATIONS[id],params=[...src.params];
+  const fields=Object.entries(STATUS_OBSERVATIONS).map(([key,label])=>{params.push(label);return `count(*) FILTER(WHERE status_text=$${params.length})::int AS ${key}`;});
+  const [summary]=await reader(`WITH source AS (${src.sql}) SELECT ${fields.join(',')},count(*)::int AS total FROM source`,params);
+  const r={value:summary[id],total:summary.total};
   return {value:Number(r.value),recordsUsed:Number(r.value),recordsExcluded:Number(r.total)-Number(r.value),reliability:'PARCIAL',temporalField:'estado atual, sem recorte temporal',reason:`Contagem literal do status ${status}. Não reconstrói histórico nem certifica entrega. Autorizado é candidato a ativo; Stand By é a proposta de suspenso. Classificações gerenciais permanecem pendentes de aprovação.`};
 }
 export async function observedStatusChart(f:Filters,reader:Reader=q){const src=await statusSnapshot(f,reader);return {series:['projetos'],points:await reader(`WITH source AS (${src.sql}) SELECT coalesce(status_text,'Sem status') AS label,count(*)::int AS projetos FROM source GROUP BY 1 ORDER BY 1`,src.params),reliability:'PARCIAL' as const,reason:'Estado textual atual de todos os projetos no escopo, independentemente do período; sem inferir status histórico.'};}

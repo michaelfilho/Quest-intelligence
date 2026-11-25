@@ -12,7 +12,7 @@ const states: Record<string, string[]> = {
 const comparableCounts="expected_total>=0 AND received_records>=0 AND expected_total::text NOT IN ('NaN','Infinity','-Infinity') AND received_records::text NOT IN ('NaN','Infinity','-Infinity')";
 export const QUALITY_METRICS = ["tarefas_recebidas", "ultima_sincronizacao", "ultima_publicacao_core", "paginas_recebidas", "registros_recebidos", "conflitos_abertos", "conflitos_resolvidos", "divergencias_contagem", "registros_reportados_tarefas", "conflitos_financeiros", "divergencias_projetos", ...Object.keys(states)];
 export async function qualityMetric(id: string, f: Filters, reader: Reader = q, snapshot?: SchemaSnapshot): Promise<Computed> {
-  for (const key of ["client", "group", "project", "department", "employee", "service", "status"] as const) if (f[key]) throw new SourceLimitation(`Monitoramento global: relacionamento de ${key} não comprovado.`);
+  for (const key of ["client", "group", "project", "department", "employee", "service", "status","category"] as const) if (f[key]) throw new SourceLimitation(`Monitoramento global: relacionamento de ${key} não comprovado.`);
   const s = snapshot ?? await runtimeSchema();
   if (id==='conflitos_financeiros'||id==='divergencias_projetos') {
     const financial=id==='conflitos_financeiros', resource=process.env[financial?'QUALITY_FINANCIAL_RESOURCE':'QUALITY_PROJECT_RESOURCE'];
@@ -52,18 +52,14 @@ export async function qualityMetric(id: string, f: Filters, reader: Reader = q, 
   }
   const cols = s.columns.filter(c => c.schema === SCHEMAS.ingest && c.table === "qpf11_tasks");
   if (!cols.length) throw new SourceLimitation("Tabela de monitoramento não disponível à role da aplicação.");
-  let sql: string; let params: unknown[] = [];
-  if (id === "ultima_sincronizacao") {
-    if (!cols.some(c => c.column === "updated_at" && temporalTypes.has(c.type))) throw new SourceLimitation("Timestamp updated_at das tarefas não confirmado.");
-    sql = "SELECT max(updated_at)::text AS value, count(updated_at)::int AS used FROM ingest.qpf11_tasks";
-  } else if (id === "tarefas_recebidas") {
-    sql = "SELECT count(*)::int AS value, count(*)::int AS used FROM ingest.qpf11_tasks";
-  } else {
-    if (!cols.some(c => c.column === "status" && ["text", "character varying", "USER-DEFINED"].includes(c.type))) throw new SourceLimitation("Campo status das tarefas não confirmado.");
-    params = [states[id]];
-    sql = "SELECT count(*) FILTER (WHERE status::text = ANY($1))::int AS value, count(*)::int AS used FROM ingest.qpf11_tasks";
-  }
-  const [r] = await reader(sql, params);
+  const timestamp=cols.some(c=>c.column==='updated_at'&&temporalTypes.has(c.type));
+  const status=cols.some(c=>c.column==='status'&&['text','character varying','USER-DEFINED'].includes(c.type));
+  if(id==='ultima_sincronizacao'&&!timestamp)throw new SourceLimitation('Timestamp updated_at das tarefas não confirmado.');
+  if(states[id]&&!status)throw new SourceLimitation('Campo status das tarefas não confirmado.');
+  const params:unknown[]=[],fields=status?Object.entries(states).map(([key,values])=>{params.push(values);return `count(*) FILTER(WHERE status::text=ANY($${params.length}))::int AS ${key}`;}):[];
+  const [summary]=await reader(`SELECT count(*)::int AS total,${timestamp?'max(updated_at)::text':'NULL::text'} AS last,
+    ${timestamp?'count(updated_at)::int':'0::int'} AS timestamps${fields.length?','+fields.join(','):''} FROM ingest.qpf11_tasks`,params);
+  const r={value:id==='ultima_sincronizacao'?summary.last:id==='tarefas_recebidas'?summary.total:summary[id],used:id==='ultima_sincronizacao'?summary.timestamps:summary.total};
   return { value: r.value, recordsUsed: Number(r.used), reliability: "PARCIAL", recordsExcluded: 0,
     temporalField: id === "ultima_sincronizacao" ? "updated_at (fotografia atual)" : "fotografia atual, sem recorte temporal", coverage: "Contagem de tarefas não comprova cobertura nem publicação.",
     reason: `Fotografia atual do monitoramento, sem recorte por período nem comprovação de publicação integral no CORE.${states[id] ? " Contagem literal dos estados: " + states[id].join(", ") + ". Outros estados não são interpretados." : ""}`,

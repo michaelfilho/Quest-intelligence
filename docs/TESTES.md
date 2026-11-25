@@ -2,11 +2,12 @@
 
 | Verificação | Resultado local |
 |---|---|
-| `npm test` | 108 backend + 15 interface aprovados |
+| `npm test` | 130 backend + 19 interface aprovados |
 | `npm run typecheck` | server e web aprovados |
 | `npm run build` | build de produção aprovado |
-| `npm run homologacao` | 36 verificações Playwright/Edge na raiz |
-| `VITE_BASE_PATH=/core/ npm run homologacao` | 36 verificações com prefixo público e cookie em `/core/` |
+| `npm run homologacao` | 42 verificações Playwright/Edge na raiz |
+| `VITE_BASE_PATH=/core/ npm run homologacao` | 42 verificações com prefixo público e cookie em `/core/` |
+| `HOMOLOG_ANALYTICS_FIXTURE=1 npm run homologacao` | 11 fluxos com Express/PGlite readonly e dados sintéticos; aprovados em `/` e `/core/` |
 | Auditorias de raiz/server/web/e2e | sem vulnerabilidades reportadas na entrega |
 
 Em PowerShell: `$env:VITE_BASE_PATH='/core/'; npm run homologacao`; depois restaure a variável para builds na raiz.

@@ -19,6 +19,8 @@ export const filtersSchema = z
     employee: id,
     service: id,
     status: id,
+    statusSource:z.enum(['projects','invoices']).optional(),
+    category:id,
   })
   .transform((f): Filters => {
     const d = defaultPeriod();
@@ -28,6 +30,8 @@ export const filtersSchema = z
   .refine((f) => Date.parse(f.end) - Date.parse(f.start) <= 6 * 366 * 86400000, { message: "período máximo de 6 anos", path: ["end"] });
 
 export const pageSchema = z.object({
+  search:z.string().trim().max(100).optional(),
+  dreGroup:z.enum(['receita_recebida','despesas_fixas','despesas_variaveis','receitas_nao_operacionais','despesas_nao_operacionais','impostos_pagos','participacao_lucros_paga']).optional(),
   page: z.coerce.number().int().min(1).max(10000).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(25),
   // Ordenação no servidor (a coluna é validada contra as colunas permitidas da tabela).

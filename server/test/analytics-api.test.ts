@@ -9,6 +9,7 @@ import { closePool } from "../src/db.js";
 const engine = new PGlite();
 let srv: Awaited<ReturnType<typeof startServer>>;
 let admin: Client, restricted: Client;
+let sqlReads=0;
 before(async () => {
   await initialiseFixtures(engine);
   await engine.exec(`ALTER TABLE core.time_entries ADD COLUMN source_kind text;
@@ -26,7 +27,7 @@ before(async () => {
     INSERT INTO core.financial_categories VALUES(1,'Receita fixture','RECEITAS OPERACIONAIS'),(2,'Despesa fixture','DESPESAS OPERACIONAIS CUSTO FIXO');
     CREATE TABLE core.financial_accounts(iclips_id bigint,name text);INSERT INTO core.financial_accounts VALUES(1,'Conta fixture');`);
   // Substitui apenas o transporte pg por PostgreSQL embarcado de testes; nenhuma rede é usada.
-  mock.method(pg.Pool.prototype, "query", async (sql: any, params: any) => engine.query(sql, params));
+  mock.method(pg.Pool.prototype, "connect", async () => ({query:(sql:any,params:any)=>{sqlReads++;return engine.query(sql,params);},release(){}}));
   process.env.DATABASE_URL = "postgres://fixture_ro@127.0.0.1:1/quest_rinne";
   srv = await startServer();
   await createUser("admin.analytics", "admin");
@@ -36,6 +37,47 @@ before(async () => {
 });
 after(async () => { await closePool(); srv.stop(); await engine.close(); mock.restoreAll(); });
 const period = "start=2026-01-01&end=2026-01-31";
+test('listas gerenciais e CSV aplicam pesquisa, colunas e permissão de exportar no servidor',async()=>{
+  const r=await admin.req(`/api/tables/gestao_clientes?${period}&search=Aurora`);
+  assert.equal(r.body.status,'OK');assert.equal(r.body.total,1);assert.equal(r.body.rows[0].recebido,100);
+  await createUser('management.analyst','analista',{grants:['relatorios.export']});const user=new Client(srv.base);await user.login('management.analyst');
+  const own=await user.req(`/api/tables/gestao_clientes?${period}&search=Aurora`);assert.equal(own.body.status,'OK');
+  for(const key of ['faturado','recebido','despesas','resultado','margem','custo_registrado'])assert.ok(!(key in own.body.rows[0]));
+  assert.equal((await user.req(`/api/tables/gestao_clientes?${period}&sort=faturado`)).status,400);
+  assert.equal((await user.req(`/api/tables/gestao_clientes?${period}&search=100`)).body.total,0);
+  const csv=await user.req(`/api/tables/gestao_clientes/export?${period}&search=Aurora`);assert.equal(csv.status,200);
+  assert.ok(csv.body.includes('Cliente Aurora'));assert.ok(!csv.body.includes('Faturamento'));assert.ok(!csv.body.includes('Custo registrado'));
+  await createUser('management.noexport','analista');const denied=new Client(srv.base);await denied.login('management.noexport');
+  assert.equal((await denied.req(`/api/tables/gestao_clientes/export?${period}`)).status,403);
+});
+test('curadoria de abas não amplia permissões dos itens anteriores; identidade do detalhe é composta',async()=>{
+  await createUser('management.client',null, {grants:['clientes.view']});const client=new Client(srv.base);await client.login('management.client');
+  assert.equal((await client.req(`/api/tables/atividades?${period}`)).status,403);
+  const r=await admin.req(`/api/activities/TASK/1/7/records?${period}`);assert.equal(r.body.status,'OK');assert.equal(r.body.total,3);
+  assert.ok(r.body.rows.every((row:any)=>row.atividade==='Atividade fixture'));
+  const scope=await admin.req(`/api/activities/TASK/1/7/records?${period}&department=B`);assert.equal(scope.body.total,0);
+  await createUser('management.records','analista');const analyst=new Client(srv.base);await analyst.login('management.records');
+  assert.equal((await analyst.req(`/api/activities/TASK/1/7/records?${period}&sort=custo_registrado`)).status,400);
+});
+
+test('cache aquecido não consulta SQL e revogação real continua bloqueando o acesso',async()=>{
+  const id=await createUser('cache.viewer','analista',{grants:['financeiro.view']});
+  const viewer=new Client(srv.base);await viewer.login('cache.viewer');
+  const url=`/api/indicators/receita_recebida?${period}`;
+  const cold=await viewer.req(url);assert.equal(cold.body.result.status,'OK');
+  const before=sqlReads,warm=await viewer.req(url);assert.equal(sqlReads,before);assert.equal(warm.body.result.calculatedAt,cold.body.result.calculatedAt);
+  const {store}=await import('../src/store.js');
+  store().prepare('UPDATE users SET grants=?,denies=? WHERE id=?').run('[]','["financeiro.view"]',id);
+  assert.equal((await viewer.req(url)).status,403);assert.equal(sqlReads,before);
+});
+test('resumo do módulo não executa cards/gráficos; gráfico possui autorização e endpoint próprio',async()=>{
+  const summary=await admin.req(`/api/modules/financeiro?${period}&view=summary`);assert.equal(summary.status,200);
+  assert.ok(summary.body.indicators.every((i:any)=>i.status==='FORBIDDEN'));
+  const chart=await admin.req(`/api/charts/horas_por_cliente?${period}`);assert.equal(chart.body.status,'OK');
+  const read=await createUser('chart.denied',null);assert.ok(read);
+  const blocked=new Client(srv.base);await blocked.login('chart.denied');
+  assert.equal((await blocked.req(`/api/charts/horas_por_cliente?${period}`)).status,403);
+});
 test('fase 2: dados financeiros e razões livres não vazam e escopo não é ampliado',async()=>{
   await createUser('analista.phase2','analista');const analyst=new Client(srv.base);await analyst.login('analista.phase2');
   for(const path of ['/api/tables/faturamento_por_cliente','/api/tables/dre_contas','/api/tables/notas_vinculos','/api/tables/conflitos_detalhes','/api/indicators/receitas_nao_operacionais','/api/indicators/horas_sem_custo_positivo'])assert.equal((await analyst.req(`${path}?${period}`)).status,403,path);
@@ -114,4 +156,18 @@ test("fotografia de cadastro não fabrica comparação histórica", async () => 
   const r = await admin.req(`/api/indicators/projetos_cadastrados?${period}&compare=1`);
   assert.equal(r.body.result.value, 2); assert.equal(r.body.result.previous, null);
   assert.ok(r.body.result.reason.includes("sem reconstrução"));
+});
+
+
+test('status de projeto não é interpretado como situação de nota fiscal', async()=>{
+  const wrong=await admin.req(`/api/indicators/notas_emitidas?${period}&status=Exemplo&statusSource=projects`);
+  assert.equal(wrong.body.result.status,'INSUFFICIENT_DATA');
+  assert.equal(wrong.body.result.value,null);
+  assert.equal(wrong.body.result.reasonCode,'UNSUPPORTED_FILTER');
+  const legacy=await admin.req(`/api/indicators/notas_emitidas?${period}&status=issued`);
+  assert.equal(legacy.body.result.status,'OK');
+  assert.equal(legacy.body.result.value,3);
+  const hours=await admin.req(`/api/indicators/horas_registradas?${period}&status=issued&statusSource=invoices`);
+  assert.equal(hours.body.result.reasonCode,'UNSUPPORTED_FILTER');
+  assert.equal(hours.body.result.value,null);
 });

@@ -2,6 +2,7 @@
 // Contém DEFINIÇÕES de negócio, nunca valores. As tabelas em `sources` são candidatas e
 // precisam ser confirmadas com `npm run introspect` antes de qualquer cálculo.
 import type { Basis, ChartDef, Column, ColumnType, IndicatorDef, ModuleDef, TableDef, Unit } from "./contracts.js";
+import {CASH_VIEW,DRE_VIEW,INDICATOR_LABELS,MANAGEMENT_VIEWS,TABLE_LABELS} from './management.js';
 
 const FE = "core.financial_entries";
 const FECC = "core.financial_entry_cost_centers";
@@ -288,6 +289,30 @@ export const MODULES: ModuleDef[] = [
     ["horas_por_colaborador"], ["atividades", "apontamentos", "lancamentos_financeiros"], "project"),
 ];
 
+const componentColumns=[col('faturado','Faturamento','BRL'),col('recebido','Receita operacional recebida','BRL'),col('despesas','Despesas operacionais associadas','BRL'),col('custo_registrado','Custo registrado','BRL'),col('horas','Horas realizadas','hours'),col('resultado','Resultado completo','BRL'),col('margem','Margem completa','percent')];
+tables.gestao_clientes={label:'Clientes',sources:[CLI,TIME,JOBS,INV,FE],link:{column:'id',to:'clientes'},columns:[col('cliente','Cliente'),col('projetos','Projetos com atividade','count'),...componentColumns],description:'Componentes por cliente; valores ausentes não são zero. Resultado completo depende de conciliação.'};
+tables.gestao_projetos={label:'Projetos',sources:[JOBS,TIME,TASKS,STEPS,FE],link:{column:'id',to:'projetos'},columns:[col('projeto','Projeto'),col('cliente','Cliente'),col('responsavel','Responsável'),col('departamento','Departamentos com atividade'),col('status','Status'),col('prazo','Prazo','date'),col('horas_previstas','Estimativa das atividades','hours'),...componentColumns.filter(c=>c.key!=='faturado'),col('horas_retrabalho','Retrabalho','hours')],description:'Projetos cadastrados ou com atividade no período; estimativas compartilhadas não são rateadas.'};
+tables.projetos_por_cliente={label:'Projetos agrupados por cliente',sources:[JOBS,TIME],link:{column:'cliente_id',to:'clientes'},columns:[col('cliente','Cliente'),col('projetos','Projetos','count'),col('horas','Horas realizadas','hours'),col('horas_retrabalho','Retrabalho','hours'),col('custo_registrado','Custo registrado','BRL')]};
+tables.timesheet_projetos={label:'Horas por projeto',sources:[TIME,JOBS],link:{column:'projeto_id',to:'projetos'},columns:[col('projeto','Projeto'),col('departamento','Departamentos'),col('colaboradores','Colaboradores','count'),col('horas','Horas realizadas','hours'),col('horas_retrabalho','Retrabalho','hours'),col('custo_registrado','Custo registrado','BRL')]};
+tables.timesheet_calendario={label:'Calendário de horas',sources:[TIME],columns:[col('data','Dia','date'),col('horas','Horas realizadas','hours'),col('horas_retrabalho','Retrabalho','hours'),col('apontamentos','Registros','count')]};
+for(const [id,label]of [['caixa_diario','Movimentações diárias'],['caixa_mensal','Movimentações mensais']])tables[id]={label,sources:[FE],columns:[col('periodo','Período'),col('entrada','Entradas','BRL'),col('saida','Saídas','BRL'),col('saldo','Saldo de movimentações','BRL')]};
+for(const [id,label]of [['titulos_receber','Contas a receber'],['titulos_pagar','Contas a pagar']])tables[id]={label,sources:[FE],columns:[col('descricao','Título'),col('vencimento','Vencimento','date'),col('em_aberto','Em aberto','BRL')],description:'Identidade do título, saldo e vencimento ainda não comprovados.'};
+charts.top_clientes_faturamento={label:'Clientes com maior faturamento',kind:'ranking',basis:'faturamento',unit:'BRL',sources:[INV,CLI]};
+charts.evolucao_resultado={label:'Evolução do resultado operacional',kind:'line',basis:'recebimento',unit:'BRL',sources:[FE]};
+for(const [id,label]of Object.entries(INDICATOR_LABELS))if(indicators[id])indicators[id].label=label;
+for(const [id,label]of Object.entries(TABLE_LABELS))if(tables[id])tables[id].label=label;
+tables.colaboradores.columns=tables.colaboradores.columns.map(c=>c.key==='cargo'?{...c,label:'Departamentos com atividade'}:c);
+tables.apontamentos.columns.push(col('custo_registrado','Custo registrado','BRL'));
+// Curadoria visual não amplia o acesso aos itens existentes.
+export const ACCESS_MODULES:Record<'indicators'|'charts'|'tables',Record<string,string[]>>={indicators:{},charts:{},tables:{}};
+for(const kind of ['indicators','charts','tables'] as const)for(const m of MODULES)for(const id of m[kind])(ACCESS_MODULES[kind][id]??=[]).push(m.id);
+for(const [id,views]of Object.entries({...MANAGEMENT_VIEWS,financeiro:[...MANAGEMENT_VIEWS.financeiro,DRE_VIEW,CASH_VIEW]})){
+  const m=MODULES.find(m=>m.id===id);if(!m)continue;
+  for(const kind of ['indicators','charts','tables'] as const)m[kind]=[...new Set([...m[kind],...views.flatMap(v=>v[kind])])];
+}
+for(const kind of ['indicators','charts','tables'] as const)for(const m of MODULES)for(const id of m[kind])if(!ACCESS_MODULES[kind][id])ACCESS_MODULES[kind][id]=MODULES.filter(owner=>owner[kind].includes(id)).map(owner=>owner.id);
+const labels:Record<string,string>={projetos:'Projetos',contratos:'Contratos e Escopos',produtividade:'Produtividade e Capacidade',qualidade:'Integrações e Qualidade'};
+for(const m of MODULES)if(labels[m.id])m.label=labels[m.id];
 const withId = <V>(r: Record<string, V>) => Object.fromEntries(Object.entries(r).map(([id, v]) => [id, { id, ...v }]));
 export const INDICATORS = withId(indicators) as Record<string, IndicatorDef>;
 export const CHARTS = withId(charts) as Record<string, ChartDef>;

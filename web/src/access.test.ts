@@ -1,19 +1,19 @@
 // Regras de acesso da interface (funções puras). A aplicação real das permissões é testada no backend.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { MODULES, TABLES } from "../../shared/catalog";
-import { columnPermission, DEFAULT_ROLES, MODULE_PERMISSION } from "../../shared/permissions";
+import { TABLES } from "../../shared/catalog";
+import { columnPermission, DEFAULT_ROLES } from "../../shared/permissions";
 import { NAV, navFor } from "./nav";
 
 describe("menu por perfil", () => {
   it("sem permissões, nenhum item (bloqueio por padrão)", () => {
     expect(navFor(new Set())).toEqual([]);
   });
-  it("cada perfil vê exatamente os módulos das suas permissões", () => {
-    for (const r of DEFAULT_ROLES) {
-      const ids = navFor(new Set(r.permissions)).map((n) => n.id);
-      for (const m of MODULES.filter((x) => !x.detailOf)) expect(ids.includes(m.id), `${r.id}/${m.id}`).toBe(r.permissions.includes(MODULE_PERMISSION[m.id]));
-    }
+  it("agrupa navegação sem conceder áreas financeiras a perfis operacionais", () => {
+    const consulta=DEFAULT_ROLES.find(r=>r.id==='consulta')!;
+    expect(navFor(new Set(consulta.permissions)).map(n=>n.id)).toEqual(['projetos','producao','timesheet','alertas']);
+    expect(navFor(new Set(['financeiro.view'])).map(n=>n.id)).toEqual(['financeiro','dre','caixa','alertas']);
+    expect([...new Set(NAV.map(n=>n.group))]).toEqual(['Gestão Executiva','Gestão Comercial','Gestão Operacional','Gestão Financeira','Gestão e Controle','Administração']);
   });
   it("administração só aparece com permissões administrativas", () => {
     const consulta = DEFAULT_ROLES.find((r) => r.id === "consulta")!;

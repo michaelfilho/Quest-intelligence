@@ -3,6 +3,7 @@ import { lazy, StrictMode, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Link, RouterProvider } from "react-router-dom";
 import { MODULES } from "../../shared/catalog";
+import {CASH_VIEW,DRE_VIEW} from '../../shared/management';
 import { Layout } from "./components/Layout";
 import { EmptyState, ErrorState, Skeleton } from "./components/ui";
 import "./index.css";
@@ -13,6 +14,7 @@ import { AccountPage, ForcedPasswordPage, LoginPage } from "./pages/AuthPages";
 const named = <K extends string>(load: () => Promise<Record<K, React.ComponentType<any>>>, name: K) => lazy(() => load().then((m) => ({ default: m[name] })));
 const ModulePage = named(() => import("./pages/ModulePage"), "ModulePage");
 const ReportsPage = named(() => import("./pages/ReportsPage"), "ReportsPage");
+const AlertsPage=named(()=>import('./pages/AlertsPage'),'AlertsPage');
 const SettingsPage = named(() => import("./pages/SettingsPage"), "SettingsPage");
 const ReportPrintPage = named(() => import("./pages/PrintPages"), "ReportPrintPage");
 
@@ -30,7 +32,7 @@ const client: QueryClient = new QueryClient({
       refetchInterval: false,
       refetchIntervalInBackground: false,
       refetchOnWindowFocus: false,
-      retry: (n, e) => !(e instanceof ApiError && e.status >= 400 && e.status < 500) && n < 1,
+      retry: false,
     },
   },
 });
@@ -43,6 +45,11 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       ...MODULES.map((m) => ({ path: m.path, element: page(<ModulePage key={m.id} moduleId={m.id} />) })),
+      {path:'/dre',element:page(<ModulePage moduleId="financeiro" preset={DRE_VIEW}/>)},
+      {path:'/fluxo-caixa',element:page(<ModulePage moduleId="financeiro" preset={CASH_VIEW}/>)},
+      {path:'/alertas',element:page(<AlertsPage/>)},
+      {path:'/departamentos/:id',element:page(<ModulePage moduleId="departamentos"/>)},
+      {path:'/colaboradores/:id',element:page(<ModulePage moduleId="colaboradores"/>)},
       { path: "/relatorios", element: page(<ReportsPage />) },
       { path: "/configuracoes", element: page(<SettingsPage />) },
       { path: "/conta", element: page(<AccountPage />) },

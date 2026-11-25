@@ -87,14 +87,18 @@ export interface Filters {
   employee?: string;
   service?: string;
   status?: string;
+  statusSource?: 'projects'|'invoices';
+  category?:string;
 }
 
 interface ResultBase {
+  calculatedAt?: string;
+  refreshAfterMs?: number;
   id: string;
   status: ResultStatus;
   reliability: Reliability;
   reason?: string;
-  reasonCode?: 'MISSING_FIELD'|'INCOMPLETE_REGISTRY'|'INVALID_RELATIONSHIP'|'PARTIAL_COVERAGE'|'BUSINESS_POLICY_PENDING'|'SOURCE_NOT_INTEGRATED'|'NO_RECORDS'|'QUERY_FAILURE';
+  reasonCode?: 'UNSUPPORTED_FILTER'|'MISSING_FIELD'|'INCOMPLETE_REGISTRY'|'INVALID_RELATIONSHIP'|'PARTIAL_COVERAGE'|'BUSINESS_POLICY_PENDING'|'SOURCE_NOT_INTEGRATED'|'NO_RECORDS'|'QUERY_FAILURE';
 }
 
 export interface IndicatorResult extends ResultBase {

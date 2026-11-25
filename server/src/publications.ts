@@ -6,7 +6,7 @@ import {paginate} from './analytics.js';
 import {SourceLimitation} from './source-errors.js';
 import type {Computed,Page} from './mappings.js';
 async function profile(f:Filters,table:string,fields:string[],reader:Reader){
-  for(const key of ['client','group','project','department','employee','service','status'] as const)if(f[key])throw new SourceLimitation(`Monitoramento global sem vínculo comprovado com ${key}.`);
+  for(const key of ['client','group','project','department','employee','service','status','category'] as const)if(f[key])throw new SourceLimitation(`Monitoramento global sem vínculo comprovado com ${key}.`);
   const s=await schemaFor(reader);
   if(!fields.every(column=>s.columns.some(c=>c.schema==='audit'&&c.table===table&&c.column===column)))throw new SourceLimitation(`Campo ausente: audit.${table} (${fields.join(', ')}).`);
   for(const field of fields.filter(f=>f.endsWith('_at')))if(!s.columns.some(c=>c.schema==='audit'&&c.table===table&&c.column===field&&temporalTypes.has(c.type)))throw new SourceLimitation('Tipo temporal de publicação/conflito incompatível.');

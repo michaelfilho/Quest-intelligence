@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
-import { INDICATORS, MODULES, TABLES, moduleById } from "../../shared/catalog.js";
+import { CHARTS, INDICATORS, MODULES, TABLES, moduleById } from "../../shared/catalog.js";
 import { DIMENSIONS, previousPeriod, type Dimension } from "../../shared/contracts.js";
 import type { Permission } from "../../shared/permissions.js";
 import { accessGuard, accessRouter } from "./access.js";
@@ -9,10 +9,12 @@ import { authenticate, authRouter, can, csrf, requireAuth } from "./auth.js";
 import { allowedColumns, chartAllowed, indicatorAllowed, moduleAllowed, scopeFilters, stripRows, stripRecordFields, tableAllowed } from "./authz.js";
 import { dbState, q, SCHEMAS } from "./db.js";
 import { filtersSchema, pageSchema } from "./filters.js";
-import { reportsRouter } from "./reports.js";
+import { csvCell,reportsRouter } from "./reports.js";
+import {audit} from './store.js';
 import { runtimeSchema, mappingCapabilities } from "./schema.js";
 import { withReadContext } from "./read-once.js";
-import { resolveDimension, resolveIndicator, resolveModule, resolveRecords, resolveTable } from "./services.js";
+import { resolveChart, resolveDimension, resolveIndicator, resolveModule, resolveRecords, resolveTable } from "./services.js";
+import { authorizedContext } from './performance.js';
 
 class HttpError extends Error {
   constructor(public status: number, message: string, public details?: unknown) {
@@ -45,7 +47,7 @@ export function createApp() {
   // Log de acesso sem query string nem headers (evita vazar filtros sensíveis ou credenciais).
   app.use((req, res, next) => {
     const t = Date.now();
-    res.on("finish", () => console.log(JSON.stringify({ level: "info", method: req.method, path: req.path, status: res.statusCode, ms: Date.now() - t, user: req.user?.username })));
+    res.on("finish", () => console.log(JSON.stringify({ level: "info", method: req.method, path: req.path, status: res.statusCode, ms: Date.now() - t })));
     res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store", "X-Frame-Options": "DENY" });
     next();
   });
@@ -67,6 +69,7 @@ export function createApp() {
 
   // Daqui em diante: sessão válida obrigatória (bloqueio por padrão).
   app.use("/api", requireAuth);
+  app.use('/api',(req,_res,next)=>authorizedContext(req.user!,next));
   app.use("/api/admin", adminRouter());
 
   app.get("/api/modules", (req, res) => res.json(MODULES.filter((m) => moduleAllowed(req.user!, m))));
@@ -75,10 +78,11 @@ export function createApp() {
     const m = moduleById(String(req.params.id));
     if (!m) throw new HttpError(404, "Módulo inexistente");
     if (!moduleAllowed(req.user!, m)) throw forbidden();
-    const f = scopeFilters(req.user!, parse(filtersSchema, req.query));
+    const summary=req.query.view==='summary';
+    const f = scopeFilters(req.user!, parse(filtersSchema, summary?omit(req.query,['view']):req.query));
     if (m.detailOf === "client" && !f.client) throw new HttpError(400, "Informe o cliente (client)");
     if (m.detailOf === "project" && !f.project) throw new HttpError(400, "Informe o projeto (project)");
-    res.json(await resolveModule(m, f, { indicator: (id) => indicatorAllowed(req.user!, id), chart: (id) => chartAllowed(req.user!, id) }));
+    res.json(await resolveModule(m, f, { indicator: (id) => !summary&&indicatorAllowed(req.user!, id), chart: (id) => !summary&&chartAllowed(req.user!, id) }));
   }));
 
   app.get("/api/indicators/:id", h(async (req, res) => {
@@ -88,6 +92,14 @@ export function createApp() {
     const f = scopeFilters(req.user!, parse(filtersSchema, req.query));
     const { state } = await dbState();
     res.json({ definition: def, result: await resolveIndicator(def.id, f, state), filters: f, previousPeriod: f.compare ? previousPeriod(f.start, f.end) : null, database: state });
+  }));
+
+  app.get('/api/charts/:id',h(async(req,res)=>{
+    const def=CHARTS[String(req.params.id)];
+    if(!def)throw new HttpError(404,'Gráfico inexistente');
+    if(!chartAllowed(req.user!,def.id))throw forbidden();
+    const f=scopeFilters(req.user!,parse(filtersSchema,req.query));
+    res.json(await resolveChart(def.id,f,(await dbState()).state));
   }));
 
   app.get("/api/indicators/:id/records", h(async (req, res) => {
@@ -100,16 +112,34 @@ export function createApp() {
     res.json({...records,rows:stripRecordFields(req.user!,records.rows)});
   }));
 
-  app.get("/api/tables/:id", h(async (req, res) => {
+  app.get(["/api/tables/:id","/api/tables/:id/export"], h(async (req, res) => {
     const def = TABLES[String(req.params.id)];
     if (!def) throw new HttpError(404, "Tabela inexistente");
     if (!tableAllowed(req.user!, def.id)) throw forbidden();
+    const exporting=req.path.endsWith('/export');
+    if(exporting&&!can(req,'relatorios.export'))throw forbidden();
     const f = scopeFilters(req.user!, parse(filtersSchema, omit(req.query, ["page", "pageSize"])));
     const p = parse(pageSchema, req.query);
     if (p.sort && !allowedColumns(req.user!, def).some((c) => c.key === p.sort)) throw new HttpError(400, "Coluna de ordenação inválida");
+    if(p.dreGroup&&def.id!=='dre_categorias')throw new HttpError(400,'Grupo disponível somente nas categorias da DRE.');
     const t = await resolveTable(def.id, f, p, (await dbState()).state);
     // Colunas sem permissão são removidas no servidor (ex.: valores financeiros para perfis operacionais).
-    res.json({ ...t, rows: stripRows(req.user!, def, t.rows), columns: allowedColumns(req.user!, def).map((c) => c.key) });
+    const rows=stripRows(req.user!,def,t.rows),columns=allowedColumns(req.user!,def);
+    if(exporting){
+      if(t.status!=='OK')return res.status(409).json({error:'Dados indisponíveis para exportar.'});
+      audit({event:'table.export',actorId:req.user!.id,actor:req.user!.username,target:def.id,details:{page:p.page,rows:rows.length}});
+      return res.set({'Content-Type':'text/csv; charset=utf-8','Content-Disposition':`attachment; filename="rinne_${def.id}_pagina_${p.page}.csv"`}).send('\uFEFF'+[columns.map(c=>c.label),...rows.map(row=>columns.map(c=>row[c.key]))].map(row=>row.map(csvCell).join(';')).join('\r\n'));
+    }
+    res.json({ ...t, rows, columns:columns.map(c=>c.key) });
+  }));
+  app.get('/api/activities/:kind/:parent/:child/records',h(async(req,res)=>{
+    if(!tableAllowed(req.user!,'atividades')||!tableAllowed(req.user!,'apontamentos'))throw forbidden();
+    const identity=parse(z.object({kind:z.enum(['TASK','WORKFLOW']),parent:z.string().min(1).max(128),child:z.string().min(1).max(128)}),req.params);
+    const f=scopeFilters(req.user!,parse(filtersSchema,req.query)),p=parse(pageSchema,req.query);
+    if(p.sort&&!allowedColumns(req.user!,TABLES.apontamentos).some(c=>c.key===p.sort))throw new HttpError(400,'Coluna de ordenação inválida');
+    if(p.dreGroup)throw new HttpError(400,'Grupo financeiro não se aplica aos apontamentos.');
+    const result=await resolveTable('apontamentos',f,{...p,activity:identity},(await dbState()).state);
+    res.json({...result,rows:stripRecordFields(req.user!,result.rows),columns:allowedColumns(req.user!,TABLES.apontamentos).map(c=>c.key)});
   }));
 
   app.get("/api/dimensions/:dim", h(async (req, res) => {
@@ -156,7 +186,7 @@ export function createApp() {
     const type = (err as { type?: string }).type;
     if (type === "entity.parse.failed") return res.status(400).json({ error: "JSON inválido" });
     if (type === "entity.too.large") return res.status(413).json({ error: "Requisição grande demais" });
-    console.error(JSON.stringify({ level: "error", msg: err.message })); // mensagem apenas, sem connection string
+    console.error(JSON.stringify({ level: "error", msg: 'REQUEST_FAILURE' }));
     res.status(500).json({ error: "Erro interno" });
   });
 

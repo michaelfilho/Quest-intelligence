@@ -61,3 +61,23 @@ Relatórios: `executivo`, `financeiro`, `rentabilidade`, `producao`, `clientes`,
 | `GET /audit?page&pageSize&event&outcome&actor` | `auditoria.view` |
 | `GET /settings` / `PUT /settings` | `config.view` / `config.manage` |
 | `GET/PUT /api/access` | `ip.manage` (allowlist de IPs) |
+# Carregamento progressivo — fase 3
+
+`GET /api/modules/:id?view=summary` retorna metadados do módulo sem calcular cards/gráficos. Mantém os guardas do módulo e filtros; os itens omitidos aparecem como FORBIDDEN no envelope de compatibilidade e não indicam ausência de permissão no frontend. O frontend usa somente os metadados desse resumo e solicita os itens autorizados individualmente.
+
+`GET /api/charts/:id` retorna `ChartResult`, com os mesmos filtros e guardas de item/escopo usados no módulo. A comparação não recalcula gráficos ou tabelas de linhas atuais. Endpoints de indicadores, registros e tabelas permanecem compatíveis.
+
+Resultados analíticos incluem `calculatedAt` e `refreshAfterMs` para preservar o ciclo de atualização ao receber cache. `updatedAt` de indicadores continua sendo atualização da fonte quando comprovada. Cache é privado em memória do backend, sem cache HTTP público. Ver [PERFORMANCE.md](PERFORMANCE.md).
+
+## Navegações gerenciais
+
+A curadoria de abas não amplia permissões: ACCESS_MODULES conserva os módulos que autorizavam os itens anteriores. Itens novos continuam sujeitos a módulo, item, coluna e escopo no backend.
+
+- GET /api/tables/:id aceita search (até 100 caracteres), aplicado antes da paginação em colunas textuais explícitas. Percentuais/underscores são literais, com parâmetros SQL. Não há busca por valores financeiros ocultos.
+- GET /api/tables/:id/export exporta somente a página indicada em CSV, com os mesmos filtros, pesquisa, ordem e colunas autorizadas. Exige relatorios.export, registra auditoria e não exporta dados indisponíveis.
+- GET /api/activities/:kind/:parent/:child/records exige acesso às atividades e apontamentos; kind é TASK ou WORKFLOW e as chaves são parâmetros separados. Departamento do usuário é imposto e ordenação por coluna sem permissão é recusada.
+- category filtra movimentações pela categoria financeira. Nas visões sem vínculo comprovado, o filtro não é ignorado: a informação fica indisponível.
+- dreGroup é restrito à tabela dre_categorias e aos grupos de classificação conhecidos. A expansão respeita tipo e classificação, sem somar outros grupos.
+- statusSource (projects ou invoices) identifica a origem de status. A interface marca seleções operacionais como projects e oferece remoção ao navegar para Financeiro. O backend recusa a interpretação cruzada entre status de projeto e situação de nota, com UNSUPPORTED_FILTER e valor ausente. Chamadas anteriores sem marcador mantêm a semântica específica do endpoint; o marcador não concede permissões.
+
+Novas listagens: gestao_clientes, gestao_projetos, projetos_por_cliente, timesheet_projetos, timesheet_calendario, caixa_diario e caixa_mensal. Resultado/margem completos e estimativas não atribuíveis permanecem ausentes; nenhum valor é presumido como zero. Títulos em aberto e vencimentos ainda não comprovados continuam indisponíveis.

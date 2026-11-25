@@ -7,6 +7,8 @@ import {runtimeSchema} from './schema.js';
 import { chartImpls, dimensionImpls, indicatorImpls, tableImpls, type Page } from "./mappings.js";
 import { SourceLimitation } from "./analytics.js";
 import { mappingLimitation } from "./mapping-limitations.js";
+import { cachedResult } from './performance.js';
+import { SEARCH_COLUMNS } from '../../shared/management.js';
 
 const REASONS: Record<Exclude<ResultStatus, "OK" | "INSUFFICIENT_DATA">, string> = {
   DATABASE_UNAVAILABLE: "Banco de dados indisponível. Configure DATABASE_URL e verifique a conexão com o PostgreSQL quest_rinne.",
@@ -16,6 +18,7 @@ const REASONS: Record<Exclude<ResultStatus, "OK" | "INSUFFICIENT_DATA">, string>
 };
 
 export function limitationCode(reason:string):NonNullable<IndicatorResult['reasonCode']> {
+  if(reason.startsWith('Filtro não aplicável:'))return 'UNSUPPORTED_FILTER';
   if (/critério gerencial|classificação|jornadas|capacidade contratada|critério.*entrega|rateio.*aprovad/i.test(reason)) return 'BUSINESS_POLICY_PENDING';
   if (/campo ausente|coluna .*não encontrada|tipo.*incompatível|timestamp.*não confirmado/i.test(reason)) return 'MISSING_FIELD';
   if (/cadastro.*nome|cadastro incompleto/i.test(reason)) return 'INCOMPLETE_REGISTRY';
@@ -30,10 +33,11 @@ const unavailable = (id: string, status: Exclude<ResultStatus, "OK" | "INSUFFICI
 };
 
 function logError(scope: string, id: string, e: unknown) {
-  console.error(JSON.stringify({ level: "error", scope, id, error: (e as Error).message }));
+  console.error(JSON.stringify({ level: "error", scope, id, code: /^[A-Z0-9]{5}$/.test((e as any)?.code??'')?(e as any).code:'QUERY_FAILURE' }));
 }
 
-export async function resolveIndicator(id: string, f: Filters, db: DbState): Promise<IndicatorResult> {
+export const resolveIndicator=(id:string,f:Filters,db:DbState)=>cachedResult(`indicator:${id}`,[f,db],()=>calculateIndicator(id,f,db));
+async function calculateIndicator(id: string, f: Filters, db: DbState): Promise<IndicatorResult> {
   const empty = { value: null, previous: null };
   if (db !== "CONNECTED") return { ...unavailable(id, "DATABASE_UNAVAILABLE"), ...empty };
   const impl = indicatorImpls[id];
@@ -55,7 +59,8 @@ export async function resolveIndicator(id: string, f: Filters, db: DbState): Pro
   }
 }
 
-export async function resolveChart(id: string, f: Filters, db: DbState): Promise<ChartResult> {
+export const resolveChart=(id:string,f:Filters,db:DbState)=>cachedResult(`chart:${id}`,[{...f,compare:false},db],()=>calculateChart(id,{...f,compare:false},db));
+async function calculateChart(id: string, f: Filters, db: DbState): Promise<ChartResult> {
   const empty = { series: [], points: [] };
   if (db !== "CONNECTED") return { ...unavailable(id, "DATABASE_UNAVAILABLE"), ...empty };
   const impl = chartImpls[id];
@@ -69,13 +74,14 @@ export async function resolveChart(id: string, f: Filters, db: DbState): Promise
   }
 }
 
-export async function resolveTable(id: string, f: Filters, p: Page, db: DbState): Promise<TableResult> {
+export const resolveTable=(id:string,f:Filters,p:Page,db:DbState)=>cachedResult(`table:${id}`,[{...f,compare:false},p,db],()=>calculateTable(id,{...f,compare:false},p,db));
+async function calculateTable(id: string, f: Filters, p: Page, db: DbState): Promise<TableResult> {
   const empty = { rows: [], total: 0, ...p };
   if (db !== "CONNECTED") return { ...unavailable(id, "DATABASE_UNAVAILABLE"), ...empty };
   const impl = tableImpls[id];
   if (!impl) return { ...unavailable(id, "NOT_IMPLEMENTED"), ...empty };
   try {
-    return { id, status: "OK", ...p, ...(await impl(f, p)) };
+    return { id, status: "OK", ...p, ...(await impl(f, {...p,searchColumns:SEARCH_COLUMNS[id]})) };
   } catch (e) {
     if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, reasonCode:limitationCode(e.message), ...empty };
     logError("table", id, e);
@@ -83,7 +89,8 @@ export async function resolveTable(id: string, f: Filters, p: Page, db: DbState)
   }
 }
 
-export async function resolveRecords(id: string, f: Filters, p: Page, db: DbState): Promise<TableResult> {
+export const resolveRecords=(id:string,f:Filters,p:Page,db:DbState)=>cachedResult(`records:${id}`,[{...f,compare:false},p,db],()=>calculateRecords(id,{...f,compare:false},p,db));
+async function calculateRecords(id: string, f: Filters, p: Page, db: DbState): Promise<TableResult> {
   const empty = { rows: [], total: 0, ...p };
   if (db !== "CONNECTED") return { ...unavailable(id, "DATABASE_UNAVAILABLE"), ...empty };
   const impl = indicatorImpls[id]?.records;
@@ -105,6 +112,10 @@ export async function resolveModule(m: ModuleDef, f: Filters, allow: { indicator
     Promise.all(m.charts.map((id) => (allow.chart(id) ? resolveChart(id, f, state) : { ...unavailable(id, "FORBIDDEN"), series: [], points: [] }))),
   ]);
   let entityName:string|undefined;
+  if(state==='CONNECTED'&&((m.id==='departamentos'&&f.department)||(m.id==='colaboradores'&&f.employee))){
+    const dim=m.id==='departamentos'?'departments':'employees';
+    entityName=(await resolveDimension(dim,f)).options?.[0]?.label;
+  }
   if(m.detailOf&&state==='CONNECTED') {
     const dim=m.detailOf==='client'?'clients':'projects';
     entityName=(await dimensionImpls[dim]?.(f).catch(()=>[]))?.[0]?.label;
@@ -118,7 +129,7 @@ export async function resolveModule(m: ModuleDef, f: Filters, allow: { indicator
   }
   return {
     module: m.id,
-    ...(m.detailOf ? {entityName:entityName??(m.detailOf==='client'?'Cliente sem vínculo/nome no escopo':'Projeto sem vínculo/nome no escopo')} : {}),
+    ...(m.detailOf||entityName ? {entityName:entityName??(m.detailOf==='client'?'Cliente sem vínculo/nome no escopo':'Projeto sem vínculo/nome no escopo')} : {}),
     generatedAt: new Date().toISOString(),
     database: state,
     filters: f,
@@ -128,7 +139,8 @@ export async function resolveModule(m: ModuleDef, f: Filters, allow: { indicator
   };
 }
 
-export async function resolveDimension(dim: Dimension, f: Filters): Promise<DimensionResult> {
+export const resolveDimension=(dim:Dimension,f:Filters)=>cachedResult(`dimension:${dim}`,[{...f,compare:false}],()=>calculateDimension(dim,{...f,compare:false}));
+async function calculateDimension(dim: Dimension, f: Filters): Promise<DimensionResult> {
   const { state } = await dbState();
   if (state !== "CONNECTED") return { status: "DATABASE_UNAVAILABLE", reason: REASONS.DATABASE_UNAVAILABLE, options: [] };
   const impl = dimensionImpls[dim];

@@ -1,6 +1,6 @@
 // Autorização de dados: módulo → item (indicador/gráfico/tabela) → coluna → escopo de departamento.
 // Aplicada no backend; o frontend apenas reflete o resultado.
-import { CHARTS, INDICATORS, MODULES, TABLES } from "../../shared/catalog.js";
+import { ACCESS_MODULES, CHARTS, INDICATORS, MODULES, TABLES } from "../../shared/catalog.js";
 import type { Filters, ModuleDef, TableDef } from "../../shared/contracts.js";
 import { columnPermission, itemPermission, MODULE_PERMISSION, type Permission } from "../../shared/permissions.js";
 import type { SessionUser } from "./auth.js";
@@ -10,13 +10,13 @@ const has = (u: SessionUser, p: Permission | null | undefined) => !p || u.permis
 export const moduleAllowed = (u: SessionUser, m: ModuleDef) => !!MODULE_PERMISSION[m.id] && u.permissions.has(MODULE_PERMISSION[m.id]);
 
 export const indicatorAllowed = (u: SessionUser, id: string) =>
-  !!INDICATORS[id] && has(u, itemPermission(id, INDICATORS[id].basis)) && MODULES.some((m) => m.indicators.includes(id) && moduleAllowed(u, m));
+  !!INDICATORS[id] && has(u, itemPermission(id, INDICATORS[id].basis)) && (ACCESS_MODULES.indicators[id]??[]).some(id=>!!MODULE_PERMISSION[id]&&has(u,MODULE_PERMISSION[id]));
 
 export const chartAllowed = (u: SessionUser, id: string) =>
-  !!CHARTS[id] && has(u, itemPermission(id, CHARTS[id].basis)) && MODULES.some((m) => m.charts.includes(id) && moduleAllowed(u, m));
+  !!CHARTS[id] && has(u, itemPermission(id, CHARTS[id].basis)) && (ACCESS_MODULES.charts[id]??[]).some(id=>!!MODULE_PERMISSION[id]&&has(u,MODULE_PERMISSION[id]));
 
 export const tableAllowed = (u: SessionUser, id: string) =>
-  !!TABLES[id] && has(u, itemPermission(id)) && MODULES.some((m) => m.tables.includes(id) && moduleAllowed(u, m));
+  !!TABLES[id] && has(u, itemPermission(id)) && (ACCESS_MODULES.tables[id]??[]).some(id=>!!MODULE_PERMISSION[id]&&has(u,MODULE_PERMISSION[id]));
 
 /** Colunas que o usuário pode ver (as demais são removidas das linhas no servidor). */
 export const allowedColumns = (u: SessionUser, def: TableDef) => def.columns.filter((c) => has(u, columnPermission(c.key)));

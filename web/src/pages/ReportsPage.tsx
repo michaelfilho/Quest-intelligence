@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import type { ColumnType, Reliability, ResultStatus, Unit } from "../../../shared/contracts";
 import { FilterBar } from "../components/FilterBar";
 import { CountPill, EmptyState, ErrorState, PageHeader, Panel, ReliabilityBadge, Skeleton } from "../components/ui";
-import { api, BASIS_LABEL, downloadFrom, filterParams, fmt, fmtDate, STATUS_LABEL, toQuery, useCan, useFilters } from "../lib";
+import { api, BASIS_LABEL, downloadFrom, filterParams, fmt, fmtDate, STATUS_LABEL, toQuery, useCan, useFilters, useDebouncedFilters,managementText,sourceLabel } from "../lib";
 import { NoAccess } from "./ModulePage";
 
 export interface ReportIndicator { id: string; label: string; unit: Unit; basis: keyof typeof BASIS_LABEL; formula: string; sources: string[]; status: ResultStatus; value: unknown; previous: number | null; reliability: Reliability; reason: string | null }
@@ -39,11 +39,11 @@ export function ReportBody({ r }: { r: Report }) {
               <tbody>
                 {r.indicators.map((i) => (
                   <tr key={i.id} className="border-b border-q-line/70 last:border-0 align-top">
-                    <td className="px-4 py-2.5"><div className="font-semibold">{i.label}</div><div className="text-[11px] text-q-mid">{i.formula}</div></td>
+                    <td className="px-4 py-2.5"><div className="font-semibold">{i.label}</div><details className="text-[11px] text-q-mid"><summary>Como é calculado</summary>{managementText(i.formula)}</details></td>
                     <td className="num px-4 py-2.5 text-right font-bold">{i.status === "OK" ? fmt(i.value, i.unit) : <span className="text-[11px] uppercase text-q-mid">{STATUS_LABEL[i.status]}</span>}</td>
                     <td className="px-4 py-2.5"><ReliabilityBadge value={i.reliability} /></td>
                     <td className="px-4 py-2.5 text-xs">{BASIS_LABEL[i.basis]}</td>
-                    <td className="px-4 py-2.5 font-mono text-[11px]">{i.sources.join(", ")}</td>
+                    <td className="px-4 py-2.5 text-[11px]">{[...new Set(i.sources.map(sourceLabel))].join(', ')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -81,8 +81,8 @@ export function ReportsPage() {
   const [sel, setSel] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const id = sel ?? catalog.data?.[0]?.id ?? null;
-  const params = filterParams(filters);
-  const rep = useQuery({ refetchInterval: 60000, queryKey: ["report", id, params], queryFn: () => api<Report>(`/reports/${id}`, params), enabled: !!id });
+  const params = filterParams(useDebouncedFilters(filters));
+  const rep = useQuery({ queryKey: ["report", id, params], queryFn: ({signal}) => api<Report>(`/reports/${id}`, params,signal), enabled: !!id });
   if (!can("relatorios.view")) return <NoAccess title="Relatórios" />;
 
   const exportAs = async (format: "csv" | "xlsx" | "md") => {

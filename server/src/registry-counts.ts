@@ -14,7 +14,7 @@ export const REGISTRY_COUNTS: Record<string, string> = {
 export async function registryCount(id: string, f: Filters, reader: Reader = q, snapshot?: SchemaSnapshot): Promise<Computed> {
   const table = REGISTRY_COUNTS[id];
   if (!table) throw new SourceLimitation("Contagem de cadastro sem mapeamento explícito.");
-  for (const key of ["client", "group", "project", "department", "employee", "service", "status"] as const) {
+  for (const key of ["client", "group", "project", "department", "employee", "service", "status","category"] as const) {
     if (f[key]) throw new SourceLimitation(`Contagem global de cadastro sem vínculo validado com o filtro ${key}.`);
   }
   const schema = snapshot ?? await runtimeSchema();
