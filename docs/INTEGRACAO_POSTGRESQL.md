@@ -8,6 +8,8 @@ O backend usa a conexão existente (`pg`, role somente leitura), sem copiar dado
 
 `GET /api/metadata/schema` exige `config.view` e retorna colunas, tipos, constraints e capacidades, sem dados individuais. Relações declaradas no contrato são distintas das foreign keys encontradas. A presença das colunas não comprova integridade referencial.
 
+A indicação de perfil completo no diagnóstico não é um bloqueio global: cada SQL valida os campos efetivamente referenciados. Medidas independentes e descrições ausentes podem ser projetadas como NULL explícito, sem virar zero; um filtro que utiliza campo ausente continua bloqueado. A duração em segundos pode funcionar sem minutos e vice-versa; tipos inválidos continuam recusados.
+
 As consultas de `analytics.ts`, `cash.ts`, `quality.ts` e `registry-counts.ts` são registradas em `mappings.ts`. Nomes e tipos são validados antes do SQL; campos ausentes/incompatíveis geram `INSUFFICIENT_DATA`. Duplicidades de `jobs.iclips_id` bloqueiam joins que multiplicariam horas. Identificadores SQL vêm de listas fechadas; valores dos filtros são parâmetros.
 
 ## Políticas de cálculo
@@ -22,7 +24,7 @@ As consultas de `analytics.ts`, `cash.ts`, `quality.ts` e `registry-counts.ts` s
 | Clientes | Clientes distintos em jobs com apontamentos válidos, não todos os clientes ativos administrativamente ou com movimentação financeira. Sem vínculo permanece separado. |
 | Projetos | Iniciados por `entered_at`; tempo de calendário preliminar por conclusão informada. Não reconstrói estado histórico nem certifica entrega por status. |
 | Cadastros | Contagens físicas atuais de clientes, pessoas, departamentos, jobs, peças, tarefas e etapas. Sem recorte temporal e sem comparação histórica fabricada. |
-| Movimentações | Perfis explícitos: `amount` e exatamente um campo `entry_type`/`type`. Exige `parent_id`/`parent_entry_id` com FK para o próprio cadastro financeiro. Sem esse contrato fica indisponível. Exclui integralmente famílias pai/filho. |
+| Movimentações | Perfis explícitos: `amount`, um campo `entry_type`/`type` e um vínculo `parent_id`, `parent_entry_id` ou `parent_entry_source_id`. FK física não é obrigatória. Namespace `iclips_id`, `source_id` ou `entry_source_id` exige validação unívoca nos dados: unicidade, referências existentes e ausência de autorreferência. Ambiguidade, órfãos ou ausência de evidência mantêm insuficiência. Famílias pai/filho são integralmente excluídas. |
 | Caixa | Base `payment_date`, sem usar `entry_date` como substituto. Sinais preservados. Saldo indisponível se houver negativos ambíguos. Não certifica transferências, parcelas, estornos, descontos, juros, multas, retenções ou conflitos de publicação. Não é lucro ou receita operacional. |
 | Monitoramento | Fotografia atual de tarefas e estados literais; `updated_at` é atualização da tarefa, não sucesso de coleta. `RECEIVED` não comprova publicação integral. |
 
@@ -34,7 +36,9 @@ Cliente/grupo/projeto usam chaves de jobs; horas usam departamento e colaborador
 
 Filtros sem relação comprovada geram insuficiência antes da leitura, por exemplo departamento em notas ou serviço em horas. Dimensões retornam IDs com apontamentos no período/escopo, até 500 opções. Campos não comprovados permanecem vazios; não viram zero. Ordenação usa colunas autorizadas e comprovadas.
 
-A interface consulta novamente a cada 60 segundos enquanto ativa; dados novos do n8n aparecem sem importação. A estrutura é revalidada a cada cinco minutos. Cards não necessariamente representam a mesma transação de publicação.
+Somente consultas analíticas visíveis — módulo, tabelas, detalhamento aberto, relatório selecionado e saúde — são atualizadas a cada 60 segundos enquanto a janela está ativa. Cadastro de usuários, configurações, catálogo de relatórios, opções de filtros e impressão não têm polling global. A estrutura é revalidada a cada cinco minutos. SELECTs idênticos compartilham execução no mesmo pedido ou enquanto estão simultaneamente em andamento; não há cache de dados entre pedidos concluídos. Parâmetros distintos de escopo não se misturam. Cards não necessariamente representam a mesma transação de publicação.
+
+`FINANCIAL_PARENT_FIELD` e `FINANCIAL_PARENT_TARGET` podem registrar uma escolha explícita de campo/namespace após validar a origem, nunca apenas para liberar números. Aceitam somente as opções suportadas e presentes; não dispensam as verificações dos dados. Referências válidas comprovam a associação estrutural, mas não certificam a natureza contábil dos pagamentos, transferências ou parcelas: movimentos continuam em reconciliação.
 
 ## Validação posterior
 

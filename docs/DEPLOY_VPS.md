@@ -1,5 +1,7 @@
 # Deploy na VPS
 
+Procedimento atual, com preservação dos ajustes locais: [ATUALIZACAO_PRODUCAO.md](ATUALIZACAO_PRODUCAO.md). A publicação no GitHub é separada da atualização manual na VPS. As seções seguintes incluem referência da instalação anterior; não reexecutar criação de role, banco ou configuração de rede da instalação existente.
+
 ## Atualização da instalação existente
 
 Produção informada pelo responsável: fonte em `/opt/apps/quest-rinne-web`, execução em `/opt/apps/quest-rinne-web-runtime`, projeto Docker `quest-rinne-web`, frontend na porta 18372 e PostgreSQL na rede `quest-rinne_private`. Estas informações não foram verificadas por acesso remoto nesta tarefa.
@@ -12,7 +14,7 @@ Produção informada pelo responsável: fonte em `/opt/apps/quest-rinne-web`, ex
 6. Validar `/core/`, assets, login/logout, cookie Path `/core/`, downloads, impressão, permissões e `/core/api/metadata/schema`. Consultar os motivos dos mapeamentos indisponíveis e executar o verificador somente leitura da [integração](INTEGRACAO_POSTGRESQL.md).
 7. Reconciliar números reais por domínio e registrar evidências antes de declarar homologação. Se falhar, usar o rollback existente com o backup anterior, sem trocar a role ou o PostgreSQL.
 
-Nenhum desses passos foi executado nesta tarefa. O commit está preparado localmente; não houve push nem deploy. As seções seguintes são referência para instalação/configuração, não uma ordem para recriar a infraestrutura em funcionamento.
+Nenhum desses passos de infraestrutura foi executado nesta tarefa. A publicação no GitHub não realiza deploy. As seções seguintes são referência para instalação/configuração, não uma ordem para recriar a infraestrutura em funcionamento.
 
 > **Nada deste documento foi executado.** Docker não existe na máquina de desenvolvimento, então as imagens e os compose **não foram homologados com execução real**. Cada passo que toca produção exige aprovação explícita. O deploy não deve interferir nos demais sistemas da Quest hospedados na VPS.
 

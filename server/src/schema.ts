@@ -51,7 +51,7 @@ export function mappingCapabilities(s: SchemaSnapshot) {
     domains: Object.fromEntries(Object.entries(requirements).map(([table, cols]) => {
       let reason: string | null = null;
       try { validateStatement(s, `FROM core.${table}`); } catch (e) { reason = (e as Error).message; }
-      return [table, { available: reason === null, reason, missing: cols.filter(col => !available.has(`${table}.${col}`)) }];
+      return [table, { available: reason === null, reason, missing: cols.filter(col => !available.has(`${table}.${col}`)), note: "Perfil completo de referência. Consultas individuais exigem somente campos efetivamente usados." }];
     })),
     relationships: DECLARED_RELATIONSHIPS.map(([from, field, to, target]) => ({ from: `core.${from}.${field}`, to: `core.${to}.${target}`,
       declared: true, columnsPresent: available.has(`${from}.${field}`) && available.has(`${to}.${target}`),
@@ -66,7 +66,10 @@ export function validateStatement(s: SchemaSnapshot, sql: string) {
   for (const [table, columns] of Object.entries(requirements)) {
     if (!sql.includes(`core.${table}`)) continue;
     const actual = s.columns.filter(c => c.schema === SCHEMAS.core && c.table === table);
-    for (const name of columns) {
+    const alias = { time_entries: "t", jobs: "j", invoices: "i" }[table];
+    const referenced = alias ? [...sql.matchAll(new RegExp(`\\b${alias}\\.([a-z_]+)`, "g"))].map(m => m[1]) : [];
+    // Perfis/SELECT * são conservadores; SQL explícito exige só o que realmente utiliza.
+    for (const name of new Set(referenced.length ? referenced : columns)) {
       const c = actual.find(c => c.column === name);
       if (!c) throw new SourceLimitation(`Mapeamento ${table} indisponível: coluna ${name} não encontrada pela introspecção.`);
       if (["duration_seconds", "duration_minutes", "service_amount", "net_amount", "iss_amount"].includes(name) && !numericTypes.has(c.type)) {
@@ -80,19 +83,39 @@ export function validateStatement(s: SchemaSnapshot, sql: string) {
   }
 }
 
-let cardinalityAt = 0;
-let cardinalityPending: Promise<void> | undefined;
+export function prepareStatement(s: SchemaSnapshot, sql: string) {
+  const has = (table: string, column: string) => s.columns.some(c => c.schema === SCHEMAS.core && c.table === table && c.column === column);
+  if (sql.includes("core.time_entries")) {
+    if (!has("time_entries", "duration_seconds") && !has("time_entries", "duration_minutes")) throw new SourceLimitation("Nenhuma duração comprovada no timesheet.");
+    for (const field of ["duration_seconds", "duration_minutes"]) if (!has("time_entries", field)) sql = sql.replaceAll(`t.${field}`, "NULL::numeric");
+  }
+  // Campos apenas descritivos/medidas independentes podem faltar. NULL explícito não vira zero.
+  for (const [table, alias, column, type] of [
+    ["invoices", "i", "invoice_number", "text"], ["invoices", "i", "client_name", "text"],
+    ["invoices", "i", "net_amount", "numeric"], ["invoices", "i", "iss_amount", "numeric"],
+    ["invoices", "i", "last_seen_at", "timestamptz"], ["invoices", "i", "competence_date", "date"],
+    ["time_entries", "t", "completed_at", "timestamptz"],
+    ["jobs", "j", "expected_end_at", "timestamptz"],
+  ]) {
+    if (has(table, column)) continue;
+    // Substitui só a projeção; se usado no WHERE, a validação continua exigindo o campo.
+    sql = sql.replace(new RegExp(`\\b${alias}\\.${column}(?=\\s*(?:,|\\n|FROM\\b))`), `NULL::${type} AS ${column}`);
+  }
+  validateStatement(s, sql);
+  return sql;
+}
+
+export async function validateJobIdentity(schema: SchemaSnapshot, reader: Reader = q) {
+  const uniqueJobs = schema.constraints.some(c => c.schema === SCHEMAS.core && c.table === "jobs" && ["p", "u"].includes(c.type)
+    && /^(?:PRIMARY KEY|UNIQUE(?: NULLS NOT DISTINCT)?)\s*\(iclips_id\)/.test(c.def.replaceAll('"', '')));
+  if (!uniqueJobs) {
+      const [r] = await reader(`SELECT EXISTS(SELECT 1 FROM core.jobs WHERE iclips_id IS NOT NULL GROUP BY iclips_id HAVING count(*) > 1 LIMIT 1) AS duplicate`, []);
+      if (r.duplicate) throw new SourceLimitation("iclips_id duplicado em jobs: join bloqueado para impedir multiplicação de horas.");
+  }
+}
 export async function analyticsQuery<T extends Record<string, any>>(sql: string, params: unknown[]): Promise<T[]> {
   const schema = await runtimeSchema();
-  validateStatement(schema, sql);
-  // Não confiar apenas em nomes de chaves: detectar fanout antes de usar jobs como dimensão.
-  if (sql.includes("JOIN core.jobs") && Date.now() - cardinalityAt >= ttl) {
-    if (!cardinalityPending) cardinalityPending = (async () => {
-      const [r] = await q(`SELECT EXISTS(SELECT 1 FROM core.jobs WHERE iclips_id IS NOT NULL GROUP BY iclips_id HAVING count(*) > 1 LIMIT 1) AS duplicate`, []);
-      if (r.duplicate) throw new SourceLimitation("iclips_id duplicado em jobs: join bloqueado para impedir multiplicação de horas.");
-      cardinalityAt = Date.now();
-    })().finally(() => { cardinalityPending = undefined; });
-    await cardinalityPending;
-  }
+  sql = prepareStatement(schema, sql);
+  if (sql.includes("core.jobs")) await validateJobIdentity(schema);
   return q<T>(sql, params);
 }

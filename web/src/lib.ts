@@ -66,7 +66,7 @@ export interface Health {
   schemas?: Record<string, string>; // só para quem tem config.view
   timezone: string;
 }
-export const useHealth = () => useQuery({ queryKey: ["health"], queryFn: () => api<Health>("/health"), refetchInterval: 30000 });
+export const useHealth = (poll = false) => useQuery({ queryKey: ["health"], queryFn: () => api<Health>("/health"), refetchInterval: poll ? 60000 : false });
 
 // ---------------- Filtros globais ----------------
 export const FILTER_KEYS = ["start", "end", "compare", "client", "group", "project", "department", "employee", "service", "status"] as const;

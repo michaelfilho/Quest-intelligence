@@ -83,7 +83,7 @@ function QuickSearch() {
 export function Layout() {
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
-  const health = useHealth();
+  const health = useHealth(true); // único dono do timer; painéis observam a mesma query sem outro intervalo
   const { search } = useFilters();
   const title = useTitle();
   const me = useMe().data;

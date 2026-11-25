@@ -1,9 +1,10 @@
 // Mapeamentos determinísticos. Cada fonte é validada pela introspecção em tempo de execução.
 import type { Dimension, Filters, IndicatorResult, Reliability, TableResult } from "../../shared/contracts.js";
 import { computeMetric, METRICS, metricRecords, TIME_CHARTS, timeChart, invoiceChart, TIME_TABLES, timeTable, sourceStatement, paginate, operationalDimension, clientTable, jobTable } from "./analytics.js";
-import { CASH_METRICS, computeCash, cashRecords, cashChart } from "./cash.js";
+import { CASH_METRICS, computeCash, cashRecords, cashChart, CASH_DIMENSION_CHARTS, cashDimensionChart, cashClientTable } from "./cash.js";
 import { QUALITY_METRICS, qualityMetric } from "./quality.js";
 import { REGISTRY_COUNTS, registryCount, registryRecords } from "./registry-counts.js";
+import { jobChart, invoiceEvolution, ingestChart, ingestTable, futureEntries, timeAlerts, taskTable } from "./extensions.js";
 
 export type Computed = Pick<IndicatorResult, "value" | "recordsUsed" | "recordsExcluded" | "exclusions" | "updatedAt" | "reason" | "temporalField" | "coverage"> & {
   reliability: Reliability;
@@ -34,13 +35,23 @@ export const indicatorImpls: Partial<Record<string, IndicatorImpl>> = Object.fro
 for (const id of CASH_METRICS) indicatorImpls[id] = { compute: f => computeCash(id, f), records: (f, p) => cashRecords(id, f, p) };
 for (const id of QUALITY_METRICS) indicatorImpls[id] = { comparable: false, compute: f => qualityMetric(id, f) };
 for (const id of Object.keys(REGISTRY_COUNTS)) indicatorImpls[id] = { comparable: false, compute: f => registryCount(id, f), records: (f, p) => registryRecords(id, f, p) };
+indicatorImpls.lancamentos_futuros = { compute: f => futureEntries(f) };
 export const chartImpls: Partial<Record<string, ChartImpl>> = Object.fromEntries(TIME_CHARTS.map(id => [id, (f: Filters) => timeChart(id, f)]));
 chartImpls.evolucao_faturamento = invoiceChart;
 chartImpls.movimentacoes_realizadas = f => cashChart(f);
+chartImpls.projetos_por_status = f => jobChart("status", f);
+chartImpls.evolucao_producao = f => jobChart("opened", f);
+chartImpls.evolucao_financeira = invoiceEvolution;
+chartImpls.ingest_por_status = f => ingestChart(f);
+for (const id of CASH_DIMENSION_CHARTS) chartImpls[id] = f => cashDimensionChart(id,f);
 export const tableImpls: Partial<Record<string, TableImpl>> = Object.fromEntries(TIME_TABLES.map(id => [id, (f: Filters, p: Page) => timeTable(id, f, p)]));
 tableImpls.clientes = clientTable;
 tableImpls.projetos = jobTable;
 tableImpls.lancamentos_financeiros = (f, p) => cashRecords("movimentos", f, p);
+tableImpls.alertas = timeAlerts;
+tableImpls.atividades = (f, p) => taskTable(f, p);
+tableImpls.tarefas_ingest = (f, p) => ingestTable(f, p);
+tableImpls.receita_por_cliente = (f,p) => cashClientTable(f,p);
 tableImpls.notas_fiscais = async (f, p) => {
   const src = sourceStatement("invoices", f);
   const sort = p.sort ?? "emissao";

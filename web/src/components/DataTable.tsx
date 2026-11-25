@@ -30,9 +30,11 @@ export function DataTable({ def, filters, endpoint, title, search, actions }: { 
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null); // ordenação no servidor
   const pageSize = def.pageSize ?? (def.display === "cards" ? 24 : 25);
   const path = endpoint ?? `/tables/${def.id}`;
+  const tableFilters = { ...filters, compare: false }; // comparação só altera cards, não as linhas atuais
   const q = useQuery({
-    queryKey: [path, filters, page, pageSize, sort],
-    queryFn: () => api<TableResult & { columns?: string[] }>(path, { ...filterParams(filters), page, pageSize, sort: endpoint ? undefined : sort?.key, dir: endpoint ? undefined : sort?.dir }),
+    refetchInterval: 60000,
+    queryKey: [path, tableFilters, page, pageSize, sort],
+    queryFn: () => api<TableResult & { columns?: string[] }>(path, { ...filterParams(tableFilters), page, pageSize, sort: endpoint ? undefined : sort?.key, dir: endpoint ? undefined : sort?.dir }),
     placeholderData: keepPreviousData,
   });
   const navigate = useNavigate();

@@ -1,5 +1,7 @@
 # Diagnóstico da integração — 25/11/2026
 
+> Registro da primeira integração local (`1690e79`). Para a revisão final, contagens atualizadas, publicação e procedimento de atualização, consultar [REVISAO_PUBLICACAO.md](REVISAO_PUBLICACAO.md) e [ATUALIZACAO_PRODUCAO.md](ATUALIZACAO_PRODUCAO.md).
+
 ## Entrega e limites
 
 Código preparado para o próprio backend consultar a conexão existente. Nenhum acesso à VPS/PostgreSQL de produção, SSH, deploy ou push foi realizado. A autorização final restringe a validação real ao ambiente após a atualização.

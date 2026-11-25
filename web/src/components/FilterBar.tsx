@@ -21,7 +21,8 @@ const input = "h-10 rounded-lg border border-q-line bg-white px-3 text-sm font-n
 
 function DimSelect({ dim, label, value, onChange }: { dim: Dimension; label: string; value?: string; onChange: (v?: string) => void }) {
   const { filters } = useFilters();
-  const q = useQuery({ queryKey: ["dim", dim, filters], queryFn: () => api<DimensionResult>(`/dimensions/${dim}`, { ...filters, compare: undefined }), staleTime: 60000 });
+  const dimensionFilters = { ...filters, compare: false };
+  const q = useQuery({ queryKey: ["dim", dim, dimensionFilters], queryFn: () => api<DimensionResult>(`/dimensions/${dim}`, { ...dimensionFilters, compare: undefined }), staleTime: 60000 });
   const options = q.data?.options ?? [];
   const disabled = !options.length && !value;
   return (

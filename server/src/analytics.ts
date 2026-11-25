@@ -25,6 +25,7 @@ export const METRICS: Record<string, Metric> = {
   horas_registradas: tm("sum(seconds) / 3600.0"),
   custo_mao_de_obra: tm("sum(labor_cost)", { amount: "labor_cost", condition: "labor_cost IS NOT NULL AND labor_cost::text NOT IN ('NaN','Infinity','-Infinity')", limitation: "Soma apenas labor_cost registrado em apontamentos válidos; não adiciona duração × hourly_rate nem despesas de pessoal. Custo ausente reduz cobertura; não certifica custo total ou margem. " + timeNote }),
   horas_retrabalho: tm("sum(seconds) / 3600.0", { condition: "is_rework IS TRUE" }),
+  retrabalho: tm("count(*)", { condition: "is_rework IS TRUE", limitation: "Quantidade de apontamentos válidos marcados is_rework; não equivale a tarefas distintas ou alterações de workflow. " + timeNote }),
   percentual_retrabalho: tm("sum(seconds) FILTER (WHERE is_rework IS TRUE) / nullif(sum(seconds), 0)"),
   colaboradores_ativos: tm("count(DISTINCT employee_id)", { condition: "employee_id IS NOT NULL" }),
   clientes_ativos: tm("count(DISTINCT client_id)", { condition: "client_id IS NOT NULL", limitation: "Clientes com apontamentos válidos no período; não representa todo cliente com movimentação financeira ou cadastro ativo. " + timeNote }),
@@ -96,7 +97,7 @@ export function sourceStatement(domain: Domain, f: Filters, temporal?: string, i
   return { sql, params };
 }
 
-const eligibleTime = "seconds IS NOT NULL AND started_at::timestamptz <= CURRENT_TIMESTAMP AND (finished_at IS NULL OR (finished_at::timestamptz <= CURRENT_TIMESTAMP AND finished_at::timestamptz >= started_at::timestamptz))";
+export const eligibleTime = "seconds IS NOT NULL AND started_at::timestamptz <= CURRENT_TIMESTAMP AND (finished_at IS NULL OR (finished_at::timestamptz <= CURRENT_TIMESTAMP AND finished_at::timestamptz >= started_at::timestamptz))";
 export function metricStatement(id: string, f: Filters): Statement {
   const spec = METRICS[id];
   if (!spec) throw new SourceLimitation("Sem semântica suficiente para este indicador.");

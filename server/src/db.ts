@@ -1,5 +1,6 @@
 import "./env.js";
 import pg from "pg";
+import { readOnce } from "./read-once.js";
 import type { DbState } from "../../shared/contracts.js";
 
 const warned = new Set<string>();
@@ -51,7 +52,7 @@ export function getPool() {
 export async function q<T extends pg.QueryResultRow>(sql: string, params: unknown[] = []) {
   const p = getPool();
   if (!p) throw new Error("DATABASE_URL não configurado");
-  return (await p.query<T>(sql, params)).rows;
+  return readOnce(sql, params, async () => (await p.query<T>(sql, params)).rows);
 }
 
 // Estado do banco com cache curto, para não pingar o PostgreSQL a cada indicador.

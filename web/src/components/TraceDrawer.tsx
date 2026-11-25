@@ -18,7 +18,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 /** Rastreabilidade: de onde veio o número. */
 export function TraceDrawer({ id, filters, onClose }: { id: string; filters: Filters; onClose: () => void }) {
-  const q = useQuery({ queryKey: ["indicator", id, filters], queryFn: () => api<IndicatorDetail>(`/indicators/${id}`, filterParams(filters)) });
+  const q = useQuery({ refetchInterval: 60000, queryKey: ["indicator", id, filters], queryFn: () => api<IndicatorDetail>(`/indicators/${id}`, filterParams(filters)) });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);

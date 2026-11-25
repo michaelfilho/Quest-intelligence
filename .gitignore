@@ -37,6 +37,11 @@ Thumbs.db
 *.dump
 *.bak
 backups/
+.releases/
+*.private.json
+*.private.*
+*.private.sh
+*.private.tar.gz
 # Levantamentos internos: só incluir após revisão e autorização explícita.
 docs/mapeamento.txt
 docs/complemento.txt

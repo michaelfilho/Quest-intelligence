@@ -18,6 +18,7 @@ if (!ADMIN_TEMP) throw new Error("ADMIN_TEMP_PASSWORD não informado");
 
 const results = [];
 const consoleIssues = [];
+const requested = [];
 let label = "início";
 
 const browser = await chromium.launch({ executablePath: EDGE, headless: true });
@@ -26,6 +27,7 @@ async function newPage(viewport, storageState) {
   const ctx = await browser.newContext({ viewport, locale: "pt-BR", timezoneId: "America/Sao_Paulo", acceptDownloads: true, storageState });
   const page = await ctx.newPage();
   page.setDefaultTimeout(12000);
+  page.on("request", r => requested.push(new URL(r.url()).pathname));
   page.on("console", (m) => m.type() === "error" && consoleIssues.push({ where: label, text: m.text().slice(0, 300) }));
   page.on("pageerror", (e) => consoleIssues.push({ where: label, text: "EXCEÇÃO: " + e.message.slice(0, 300) }));
   page.on("response", (r) => r.status() >= 500 && consoleIssues.push({ where: label, text: `HTTP ${r.status()} ${new URL(r.url()).pathname}` }));
@@ -136,8 +138,11 @@ await check("tabela: ordenação no servidor (aria-sort)", async () => {
 await check("filtros globais: período e comparação persistem na URL entre módulos", async () => {
   await p.goto(BASE + "/");
   await p.getByLabel("Período").selectOption({ label: "Ano atual" });
+  await settle(p);
+  const tableReads = requested.filter(path => path.includes("/api/tables/")).length;
   await p.getByLabel("Comparar com período anterior").check();
   await settle(p);
+  if (requested.filter(path => path.includes("/api/tables/")).length !== tableReads) throw new Error("comparação duplicou consultas de linhas atuais");
   if (!/start=\d{4}-01-01/.test(p.url()) || !p.url().includes("compare=1")) throw new Error("URL sem filtros: " + p.url());
   await p.getByRole("link", { name: "Financeiro" }).click();
   await settle(p);
@@ -238,6 +243,15 @@ await check("logout encerra a sessão", async () => {
   await rest.page.goto(BASE + "/");
   await rest.page.getByRole("button", { name: "Sair" }).first().click();
   await rest.page.getByRole("heading", { name: "Entrar" }).waitFor();
+  if ((await rest.ctx.cookies()).some(c => c.name === "rinne_sid")) throw new Error("cookie não removido no mesmo Path");
+});
+
+await check("base pública: API, assets e cookie não duplicam prefixos", async () => {
+  const prefix = new URL(BASE).pathname.replace(/\/$/, "");
+  const cookies = (await desk.ctx.cookies()).filter(c => c.name === "rinne_sid");
+  if (cookies.length !== 1 || cookies[0].path !== (prefix + "/")) throw new Error("Path do cookie diverge da base pública");
+  if (prefix && requested.some(path => path.startsWith("/api/") || path.startsWith("/assets/") || path.includes(prefix + prefix + "/"))) throw new Error("URL saiu da base pública ou duplicou prefixo");
+  if (!requested.some(path => path.startsWith(prefix + "/api/"))) throw new Error("API pública não foi consultada");
 });
 
 await browser.close();

@@ -53,4 +53,7 @@ describe("câmera, microfone e localização", () => {
   it("CSP não libera mídia (áudio/vídeo)", () => {
     expect(headers).toContain("media-src 'none'");
   });
+  it("nginx não transforma o Path do cookie já configurado pelo backend", () => {
+    expect(conf).not.toContain("proxy_cookie_path");
+  });
 });

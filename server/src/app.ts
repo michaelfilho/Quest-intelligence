@@ -11,6 +11,7 @@ import { dbState, q, SCHEMAS } from "./db.js";
 import { filtersSchema, pageSchema } from "./filters.js";
 import { reportsRouter } from "./reports.js";
 import { runtimeSchema, mappingCapabilities } from "./schema.js";
+import { withReadContext } from "./read-once.js";
 import { resolveDimension, resolveIndicator, resolveModule, resolveRecords, resolveTable } from "./services.js";
 
 class HttpError extends Error {
@@ -35,6 +36,7 @@ const DIMENSION_PERMISSION: Partial<Record<Dimension, Permission>> = { clients: 
 export function createApp() {
   const app = express();
   app.disable("x-powered-by");
+  app.use((_req, _res, next) => withReadContext(next));
   app.set("query parser", "simple"); // sem objetos/arrays aninhados vindos da query string
   // Só confia em X-Forwarded-For vindo destes proxies. Padrão: apenas loopback (dev).
   // Produção: IP fixo do nginx (docker-compose.prod.yml). Ver docs/SEGURANCA.md.

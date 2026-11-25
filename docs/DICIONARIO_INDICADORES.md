@@ -33,7 +33,7 @@ Percentuais são frações (0–1). Bases temporais nunca são misturadas no mes
 | `margem_bruta` | Margem bruta | percent | recebimento | (Receita recebida − custos diretos) ÷ receita recebida. | core.financial_entries, core.financial_entry_cost_centers | Custos diretos confiáveis. | rentabilidade, cliente | indisponível; sem fonte/semântica validada |
 | `margem_contribuicao` | Margem de contribuição | percent | recebimento | (Receita recebida − custos variáveis) ÷ receita recebida. | core.financial_entries, core.financial_entry_cost_centers | Classificação de custos variáveis — ainda não definida pela Quest. | rentabilidade | indisponível; sem fonte/semântica validada |
 | `margem_operacional` | Margem operacional | percent | recebimento | Resultado operacional ÷ receita recebida. | core.financial_entries, core.financial_entry_cost_centers | Custos diretos e indiretos completos. | executivo, rentabilidade | indisponível; sem fonte/semântica validada |
-| `lancamentos_futuros` | Lançamentos com data futura | count | competencia | Lançamentos com data posterior a hoje (ex.: 166 em dez/2026 na auditoria). Nunca contam como realizados. | core.financial_entries |  | financeiro, qualidade | indisponível; sem fonte/semântica validada |
+| `lancamentos_futuros` | Lançamentos com data futura | count | operacional | Contagem por entry_date em dia futuro no período; pode haver payment_date passado, que continua classificando o caixa. | core.financial_entries |  | financeiro, qualidade | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `projetos_ativos` | Projetos ativos | count | operacional | Jobs abertos (status não concluído/cancelado) no fim do período. | core.jobs | Status de conclusão do job na origem. | executivo, clientes, projetos, producao, cliente | indisponível; sem fonte/semântica validada |
 | `projetos_iniciados` | Projetos iniciados | count | operacional | Jobs com data de abertura no período. | core.jobs | Data de abertura do job. | projetos, producao | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `projetos_concluidos` | Projetos concluídos | count | operacional | Jobs com data de conclusão no período e status de concluído na origem. | core.jobs | Status e data de conclusão. | projetos, produtividade, producao | indisponível; sem fonte/semântica validada |
@@ -43,11 +43,11 @@ Percentuais são frações (0–1). Bases temporais nunca são misturadas no mes
 | `horas_registradas` | Horas registradas | hours | operacional | Soma dos apontamentos de horas com data no período. | core.time_entries | Duração e data do apontamento. | executivo, clientes, projetos, timesheet, departamentos, colaboradores, produtividade, capacidade, cliente, projeto | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `horas_previstas` | Horas previstas | hours | operacional | Soma das horas orçadas/previstas nas tarefas ou jobs do período. | core.job_tasks, core.jobs | Campo de horas previstas na tarefa ou no job. | projetos, timesheet, colaboradores, produtividade, capacidade, projeto | indisponível; sem fonte/semântica validada |
 | `desvio_horas` | Desvio de horas | hours | operacional | Horas registradas − horas previstas. Negativo = abaixo do previsto. | core.time_entries, core.job_tasks | Horas previstas confiáveis. | timesheet, produtividade, eficiencia | indisponível; sem fonte/semântica validada |
-| `horas_retrabalho` | Horas de retrabalho | hours | operacional | Horas apontadas em tarefas/etapas identificadas como refação. | core.time_entries, core.job_tasks, core.workflow_steps | Marcação de refação no workflow. | timesheet, departamentos, colaboradores, produtividade, eficiencia, cliente, projeto | SQL implementado; condicionado à introspecção e qualidade parcial |
+| `horas_retrabalho` | Horas de retrabalho | hours | operacional | Soma de durações válidas de apontamentos com is_rework=true por started_at. | core.time_entries | is_rework booleano no apontamento. | timesheet, departamentos, colaboradores, produtividade, eficiencia, cliente, projeto | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `custo_mao_de_obra` | Custo de mão de obra registrado — parcial | BRL | operacional | Soma de labor_cost preenchido em apontamentos válidos por started_at. Não adiciona horas × taxa nem despesas financeiras de pessoal. | core.time_entries | labor_cost numérico; cobertura explícita e sem certificação de custo total. | rentabilidade, timesheet | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `projetos_atrasados` | Projetos em atraso | count | operacional | Jobs abertos com prazo vencido ou concluídos após o prazo no período. | core.jobs | Prazo e data de conclusão do job. | executivo, projetos, produtividade | indisponível; sem fonte/semântica validada |
 | `atrasos` | Atividades atrasadas | count | operacional | Tarefas concluídas após o prazo ou abertas com prazo vencido. | core.job_tasks | Prazo e data de conclusão da tarefa. | departamentos, producao, eficiencia, cliente, projeto | indisponível; sem fonte/semântica validada |
-| `retrabalho` | Retrabalho / refações | count | operacional | Tarefas ou etapas identificadas como refação na origem. | core.job_tasks, core.workflow_steps | Marcação de refação no workflow. | producao, contratado | indisponível; sem fonte/semântica validada |
+| `retrabalho` | Apontamentos com retrabalho | count | operacional | Quantidade de apontamentos válidos com is_rework=true; não representa tarefas distintas. | core.time_entries | is_rework booleano no apontamento. | producao, contratado | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `alteracoes` | Alterações solicitadas | count | operacional | Etapas de alteração solicitadas pelo cliente. | core.workflow_steps, core.job_tasks | Etapa de alteração identificável. | producao, contratado | indisponível; sem fonte/semântica validada |
 | `tempo_medio_execucao` | Tempo médio de calendário — preliminar | days | operacional | Média entre entered_at e completed_at informado no período, sem datas futuras. Não mede esforço trabalhado nem certifica entrega por status. | core.jobs | Datas de abertura e conclusão. | departamentos, producao | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `clientes_ativos` | Clientes com apontamentos | count | operacional | Clientes distintos vinculados a jobs com apontamentos válidos por started_at. Não mede atividade financeira nem situação administrativa. | core.time_entries, core.jobs |  | executivo, clientes | SQL implementado; condicionado à introspecção e qualidade parcial |
@@ -68,10 +68,10 @@ Percentuais são frações (0–1). Bases temporais nunca são misturadas no mes
 | `tarefas_recebidas` | Tarefas de coleta | count | ingestao | Total de tarefas de coleta do QPF. | ingest.qpf11_tasks |  | qualidade | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `tarefas_pendentes` | Tarefas pendentes | count | ingestao | Tarefas com status pendente. | ingest.qpf11_tasks |  | qualidade | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `tarefas_em_execucao` | Tarefas em execução | count | ingestao | Tarefas com status em execução. | ingest.qpf11_tasks |  | qualidade | SQL implementado; condicionado à introspecção e qualidade parcial |
-| `tarefas_em_reconciliacao` | Tarefas em reconciliação | count | ingestao | Tarefas em reconciliação (ex.: 209 divergências de projetos na auditoria). | ingest.qpf11_tasks |  | qualidade | SQL implementado; condicionado à introspecção e qualidade parcial |
+| `tarefas_em_reconciliacao` | Tarefas em reconciliação | count | ingestao | Tarefas em reconciliação. | ingest.qpf11_tasks |  | qualidade | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `paginas_recebidas` | Páginas recebidas | count | ingestao | Páginas da API iClips armazenadas. | ingest.qpf11_pages |  | qualidade | indisponível; sem fonte/semântica validada |
 | `registros_recebidos` | Registros recebidos | count | ingestao | Registros contidos nas páginas recebidas. | ingest.qpf11_pages |  | qualidade | indisponível; sem fonte/semântica validada |
-| `conflitos_financeiros` | Conflitos financeiros | count | ingestao | Conflitos de publicação financeira em aberto (ex.: 66 centros de custo + 28 documentos na auditoria). | audit.* (a mapear) |  | qualidade | indisponível; sem fonte/semântica validada |
+| `conflitos_financeiros` | Conflitos financeiros | count | ingestao | Conflitos de publicação financeira em aberto. | audit.* (a mapear) |  | qualidade | indisponível; sem fonte/semântica validada |
 | `divergencias_projetos` | Divergências de projetos | count | ingestao | Tarefas de projetos com divergência de contagem. | ingest.qpf11_tasks, audit.* (a mapear) |  | qualidade | indisponível; sem fonte/semântica validada |
 | `recursos_sem_atualizacao` | Recursos sem atualização | count | ingestao | Recursos cujo último sucesso é anterior ao limite definido. | ingest.qpf11_tasks |  | qualidade | indisponível; sem fonte/semântica validada |
 | `cobertura_dados` | Cobertura dos dados | percent | ingestao | Meses do período com coleta concluída ÷ meses do período. | ingest.qpf11_tasks, ingest.qpf11_pages |  | qualidade | indisponível; sem fonte/semântica validada |
@@ -88,7 +88,6 @@ Percentuais são frações (0–1). Bases temporais nunca são misturadas no mes
 - `margem_bruta`: Custos completos, classificação operacional, vínculo econômico ou rateio não aprovados. Não é possível certificar rentabilidade, custo ou concentração de receita operacional.
 - `margem_contribuicao`: Custos completos, classificação operacional, vínculo econômico ou rateio não aprovados. Não é possível certificar rentabilidade, custo ou concentração de receita operacional.
 - `margem_operacional`: Custos completos, classificação operacional, vínculo econômico ou rateio não aprovados. Não é possível certificar rentabilidade, custo ou concentração de receita operacional.
-- `lancamentos_futuros`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
 - `projetos_ativos`: Códigos de status, critério de conclusão/entrega ou datas efetivas ainda não têm mapeamento semântico validado. Planejamento não é produção realizada.
 - `projetos_concluidos`: Códigos de status, critério de conclusão/entrega ou datas efetivas ainda não têm mapeamento semântico validado. Planejamento não é produção realizada.
 - `pecas_produzidas`: Códigos de status, critério de conclusão/entrega ou datas efetivas ainda não têm mapeamento semântico validado. Planejamento não é produção realizada.
@@ -98,7 +97,6 @@ Percentuais são frações (0–1). Bases temporais nunca são misturadas no mes
 - `desvio_horas`: Estimativas compatíveis, classificação do esforço ou denominador não comprovados; não são somadas tarefas e etapas potencialmente sobrepostas.
 - `projetos_atrasados`: Códigos de status, critério de conclusão/entrega ou datas efetivas ainda não têm mapeamento semântico validado. Planejamento não é produção realizada.
 - `atrasos`: Códigos de status, critério de conclusão/entrega ou datas efetivas ainda não têm mapeamento semântico validado. Planejamento não é produção realizada.
-- `retrabalho`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
 - `alteracoes`: Códigos de status, critério de conclusão/entrega ou datas efetivas ainda não têm mapeamento semântico validado. Planejamento não é produção realizada.
 - `produtividade`: Códigos de status, critério de conclusão/entrega ou datas efetivas ainda não têm mapeamento semântico validado. Planejamento não é produção realizada.
 - `capacidade_disponivel`: Jornadas, disponibilidade e capacidade contratada não comprovadas; nenhuma jornada de oito horas é presumida.
@@ -111,13 +109,13 @@ Percentuais são frações (0–1). Bases temporais nunca são misturadas no mes
 - `receita_contratada`: Fonte contratual e escopo de entregas não comprovados. Orçamento de job não é contrato.
 - `entregas_vs_contratado`: Fonte contratual e escopo de entregas não comprovados. Orçamento de job não é contrato.
 - `horas_vs_previstas`: Estimativas compatíveis, classificação do esforço ou denominador não comprovados; não são somadas tarefas e etapas potencialmente sobrepostas.
-- `ultima_publicacao_core`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
-- `paginas_recebidas`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
-- `registros_recebidos`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
-- `conflitos_financeiros`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
-- `divergencias_projetos`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
-- `recursos_sem_atualizacao`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
-- `cobertura_dados`: Mapeamento semântico ainda não disponível para esta fonte. A introspecção verifica tabelas e tipos, mas não presume relacionamentos, cobertura, estados de publicação nem fórmulas gerenciais.
+- `ultima_publicacao_core`: Timestamp de publicação efetiva não mapeado; atualização da tarefa não significa publicação no CORE.
+- `paginas_recebidas`: Identidade, granularidade e ciclo de retenção das páginas de ingestão não comprovados; não inferir páginas pelo número de tarefas.
+- `registros_recebidos`: Quantidade de registros por página/publicação não mapeada; tarefas não equivalem a registros recebidos.
+- `conflitos_financeiros`: Identidade do registro, estado aberto/resolvido e versão publicada do conflito não mapeados; não inferir resolução por nomes de campos.
+- `divergencias_projetos`: Comparação entre quantidade esperada/recebida e tipo da tarefa de projeto não comprovada.
+- `recursos_sem_atualizacao`: Recurso, último sucesso e prazo esperado de atualização não aprovados; não inventar limiar de desatualização.
+- `cobertura_dados`: Exige intervalos completos e publicação efetiva, reconciliando sobreposições e publicações posteriores. Contagem de tarefas não é cobertura.
 
 ## Gráficos
 
@@ -125,20 +123,20 @@ Percentuais são frações (0–1). Bases temporais nunca são misturadas no mes
 |---|---|---|---|---|---|
 | `movimentacoes_realizadas` | Movimentações isoladas — preliminar | bar | BRL | recebimento | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `evolucao_faturamento` | Faturamento por mês de emissão | line | BRL | faturamento | SQL implementado; condicionado à introspecção e qualidade parcial |
-| `evolucao_financeira` | Evolução mensal: faturado × recebido × competência | line | BRL | competencia | indisponível; sem fonte/semântica validada |
+| `evolucao_financeira` | Faturamento emitido: bruto e líquido | line | BRL | faturamento | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `receitas_vs_despesas` | Receitas × despesas (caixa) | bar | BRL | recebimento | indisponível; sem fonte/semântica validada |
 | `faturado_vs_recebido` | Faturado × recebido por mês | bar | BRL | faturamento | indisponível; sem fonte/semântica validada |
-| `concentracao_receita` | Concentração de receita por cliente | ranking | percent | recebimento | indisponível; sem fonte/semântica validada |
-| `receita_por_grupo` | Receita por grupo empresarial | ranking | BRL | recebimento | indisponível; sem fonte/semântica validada |
-| `top_clientes_receita` | Principais clientes por receita recebida | ranking | BRL | recebimento | indisponível; sem fonte/semântica validada |
-| `receita_por_categoria` | Principais fontes de receita | ranking | BRL | recebimento | indisponível; sem fonte/semântica validada |
-| `despesas_por_categoria` | Despesas por categoria | ranking | BRL | recebimento | indisponível; sem fonte/semântica validada |
+| `concentracao_receita` | Participação das entradas isoladas por cliente — preliminar | ranking | percent | recebimento | SQL implementado; condicionado à introspecção e qualidade parcial |
+| `receita_por_grupo` | Entradas isoladas por grupo — preliminar | ranking | BRL | recebimento | SQL implementado; condicionado à introspecção e qualidade parcial |
+| `top_clientes_receita` | Entradas isoladas por cliente — preliminar | ranking | BRL | recebimento | SQL implementado; condicionado à introspecção e qualidade parcial |
+| `receita_por_categoria` | Entradas isoladas por categoria — preliminar | ranking | BRL | recebimento | SQL implementado; condicionado à introspecção e qualidade parcial |
+| `despesas_por_categoria` | Saídas isoladas por categoria — preliminar | ranking | BRL | recebimento | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `despesas_por_centro_custo` | Despesas por centro de custo | ranking | BRL | recebimento | indisponível; sem fonte/semântica validada |
 | `margem_por_cliente` | Margem bruta por cliente | ranking | percent | recebimento | indisponível; sem fonte/semântica validada |
 | `resultado_por_projeto` | Resultado por projeto | ranking | BRL | recebimento | indisponível; sem fonte/semântica validada |
 | `evolucao_margem` | Evolução da margem bruta | line | percent | recebimento | indisponível; sem fonte/semântica validada |
-| `evolucao_producao` | Evolução mensal da produção | line | count | operacional | indisponível; sem fonte/semântica validada |
-| `projetos_por_status` | Projetos por status | bar | count | operacional | indisponível; sem fonte/semântica validada |
+| `evolucao_producao` | Projetos cadastrados por mês de abertura | line | count | operacional | SQL implementado; condicionado à introspecção e qualidade parcial |
+| `projetos_por_status` | Status atual dos projetos abertos no período | bar | count | operacional | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `entregas_por_departamento` | Entregas por departamento | ranking | count | operacional | indisponível; sem fonte/semântica validada |
 | `entregas_por_cliente` | Entregas por cliente | ranking | count | operacional | indisponível; sem fonte/semântica validada |
 | `entregas_por_servico` | Entregas por serviço | ranking | count | operacional | indisponível; sem fonte/semântica validada |
@@ -150,4 +148,4 @@ Percentuais são frações (0–1). Bases temporais nunca são misturadas no mes
 | `ocupacao_por_departamento` | Departamentos sob recarga (ocupação da capacidade) | ranking | percent | operacional | indisponível; sem fonte/semântica validada |
 | `retrabalho_por_colaborador` | Frequência de retrabalho por colaborador | ranking | hours | operacional | SQL implementado; condicionado à introspecção e qualidade parcial |
 | `contratado_vs_executado` | Contratado × executado por cliente | bar | count | operacional | indisponível; sem fonte/semântica validada |
-| `ingest_por_status` | Tarefas de coleta por status | bar | count | ingestao | indisponível; sem fonte/semântica validada |
+| `ingest_por_status` | Tarefas de coleta por status | bar | count | ingestao | SQL implementado; condicionado à introspecção e qualidade parcial |

@@ -58,7 +58,7 @@ function ModuleContent({ moduleId }: { moduleId: string }) {
   const filters: Filters = m.detailOf === "client" ? { ...global, client: id } : m.detailOf === "project" ? { ...global, project: id } : global;
   const [open, setOpen] = useState<string | null>(null);
 
-  const q = useQuery({ queryKey: ["module", m.id, filters], queryFn: () => api<ModuleResult>(`/modules/${m.id}`, filterParams(filters)) });
+  const q = useQuery({ refetchInterval: 60000, queryKey: ["module", m.id, filters], queryFn: () => api<ModuleResult>(`/modules/${m.id}`, filterParams(filters)) });
   const data = q.data;
   const byId = <T extends { id: string }>(list?: T[]) => Object.fromEntries((list ?? []).map((x) => [x.id, x]));
   const ind = byId(data?.indicators);
@@ -90,8 +90,8 @@ function ModuleContent({ moduleId }: { moduleId: string }) {
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {pending && (
         <div role="status" className="rounded-xl border border-q-line border-l-4 border-l-q-orange bg-white px-6 py-4 text-sm">
-          <p className="font-bold">Banco conectado — aguardando mapeamento do schema real</p>
-          <p className="mt-1 text-q-mid">Rode <code>npm run introspect</code> no backend e implemente os cálculos em <code>server/src/mappings.ts</code>.</p>
+          <p className="font-bold">Banco conectado — critérios pendentes</p>
+          <p className="mt-1 text-q-mid">As fontes ou definições gerenciais necessárias a este módulo ainda não foram comprovadas. Consulte os motivos no detalhamento dos indicadores.</p>
         </div>
       )}
 

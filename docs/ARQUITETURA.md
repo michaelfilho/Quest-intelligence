@@ -4,7 +4,7 @@
 
 `schema.ts` consulta o catálogo PostgreSQL pela conexão já existente, com cache de estrutura em memória de cinco minutos. O CLI `introspect` usa a mesma descoberta. `mappings.ts` registra consultas de `analytics.ts`, `cash.ts`, `quality.ts` e `registry-counts.ts`; colunas e tipos precisam corresponder a perfis explícitos. Não existe reconhecimento de fórmulas por heurística nem cópia dos registros para outro banco.
 
-São 29 indicadores com SQL condicional, 7 gráficos e 10 tabelas; os demais 40 indicadores têm limitações explícitas. Nenhum foi certificado com dados reais nesta execução. Resultados parciais e em reconciliação carregam período, campo temporal, cobertura, exclusões e limitações. Fotografias de cadastro/monitoramento não fabricam comparação histórica.
+São 31 indicadores com SQL condicional, 16 gráficos e 14 tabelas; os demais 38 indicadores têm limitações explícitas. Nenhum foi certificado com dados reais nesta execução. Resultados parciais e em reconciliação carregam período, campo temporal, cobertura, exclusões e limitações. Fotografias de cadastro/monitoramento não fabricam comparação histórica.
 
 A interface atualiza consultas a cada 60 segundos enquanto ativa. O n8n continua somente alimentando o PostgreSQL existente. O backend permanece intermediário obrigatório, aplicando permissões e escopo antes da consulta.
 

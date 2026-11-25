@@ -65,6 +65,7 @@ export const MODULE_PERMISSION: Record<string, Permission> = {
 
 /** Itens (indicador/gráfico/tabela/coluna) com dado sensível próprio, além da permissão do módulo. */
 const ITEM_PERMISSION: Record<string, Permission> = {
+  lancamentos_futuros: "financeiro.view",
   custo_mao_de_obra: "custos_pessoal.view",
   ...Object.fromEntries(
     ["margem_bruta", "margem_contribuicao", "margem_operacional", "resultado_operacional", "horas_por_mil_receita", "margem_por_cliente", "resultado_por_projeto", "evolucao_margem", "rentabilidade_clientes", "rentabilidade_projetos", "custo_por_servico", "top_clientes_resultado", "top_projetos_menor_margem", "resultado_mensal", "margem", "resultado", "custo_direto"].map((k) => [k, "rentabilidade.view" as Permission])

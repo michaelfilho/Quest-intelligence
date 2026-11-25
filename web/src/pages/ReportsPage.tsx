@@ -82,7 +82,7 @@ export function ReportsPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const id = sel ?? catalog.data?.[0]?.id ?? null;
   const params = filterParams(filters);
-  const rep = useQuery({ queryKey: ["report", id, params], queryFn: () => api<Report>(`/reports/${id}`, params), enabled: !!id });
+  const rep = useQuery({ refetchInterval: 60000, queryKey: ["report", id, params], queryFn: () => api<Report>(`/reports/${id}`, params), enabled: !!id });
   if (!can("relatorios.view")) return <NoAccess title="Relatórios" />;
 
   const exportAs = async (format: "csv" | "xlsx" | "md") => {

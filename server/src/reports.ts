@@ -68,7 +68,8 @@ export async function buildReport(u: SessionUser, d: ReportDef, f: Filters) {
   const tables: Record<string, unknown>[] = [];
 
   const m = moduleById(d.module!)!;
-  const r = await resolveModule(m, f, { indicator: (x) => indicatorAllowed(u, x) && (!d.indicators || d.indicators.includes(x)), chart: (x) => chartAllowed(u, x) });
+  // O documento retorna indicadores e tabelas, não gráficos: não executar agregações descartadas.
+  const r = await resolveModule(m, f, { indicator: (x) => indicatorAllowed(u, x) && (!d.indicators || d.indicators.includes(x)), chart: () => false });
   for (const i of r.indicators) {
     if (i.status === "FORBIDDEN") continue;
     const def = INDICATORS[i.id];
