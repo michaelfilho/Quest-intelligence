@@ -2,7 +2,7 @@
 
 | Verificação | Resultado local |
 |---|---|
-| `npm test` | 95 backend + 15 interface aprovados |
+| `npm test` | 108 backend + 15 interface aprovados |
 | `npm run typecheck` | server e web aprovados |
 | `npm run build` | build de produção aprovado |
 | `npm run homologacao` | 36 verificações Playwright/Edge na raiz |
@@ -26,3 +26,6 @@ A revisão cobre `parent_entry_source_id` em namespace diferente de `iclips_id`,
 O E2E cobre login, senha obrigatória, logout, navegação, relatórios/downloads, impressão, perfis, filtros, ausência do banco e responsividade. Evidências locais em `e2e/output/`, ignoradas pelo Git. Não comprova números reais, nginx/Traefik ou Docker em execução.
 
 Após atualização, executar manualmente o verificador somente leitura de [INTEGRACAO_POSTGRESQL.md](INTEGRACAO_POSTGRESQL.md) e reconciliar os domínios. Nenhum teste acessou produção.
+
+
+Fase 2: `phase-two.test.ts` valida CPF/CNPJ e candidatos ambiguos, DRE literal, resultado antes de impostos, competencia apenas de realizados, conservacao dos rateios, namespaces interno/de origem, workflow_id, pecas TASK e WORKFLOW, status observados, custo por horas e publicacoes. `analytics-api.test.ts` verifica escopo/privilegios financeiros e nomes no caminho HTTP real. `release.test.ts` verifica conciliacao estrita de RINNE_PUBLISH da API (inclusive rollback), CLI de build com revisao e protecoes de retomada/hash. Nao executa Docker real ou deploy.

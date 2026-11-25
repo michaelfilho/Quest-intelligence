@@ -22,7 +22,7 @@ bash "$PREP" "$SHA"
 rm -f "$PREP"
 ```
 
-Esse passo não faz checkout/reset da fonte, não reinicia containers e não conecta ao PostgreSQL. O script:
+Esse passo não faz checkout/reset da fonte, não reinicia containers e não abre conexão direta ao PostgreSQL. O health interno utiliza o backend já configurado para verificar sua própria conexão. O script:
 
 - Descobre pelas labels do container API os arquivos Compose, diretório de trabalho e arquivos de ambiente efetivamente usados; não presume que os exemplos do Git sejam iguais aos ajustes do runtime.
 - Captura configurações e inspeções em backup privado, arquiva o runtime e cria uma cópia **consistente** do SQLite da API por `VACUUM INTO`, com checagem de integridade e SHA-256. O arquivo principal lido não é substituído.
@@ -37,6 +37,18 @@ Esse passo não faz checkout/reset da fonte, não reinicia containers e não con
 
 Os arquivos de backup e configuração efetiva contêm segredos e dados internos: permissões privadas, fora do Git. Não copiar seu conteúdo para chat, logs públicos ou documentação. Arquivos `*.private.*` e `.releases/` estão ignorados pelo repositório e pelo contexto Docker.
 
+### Retomar uma release completa
+
+Se esta versão do preparador já concluiu a release, repetir sem reconstruir os backups:
+
+```bash
+bash "$PREP" "$SHA" --resume /opt/apps/quest-rinne-web-runtime/.releases/IDENTIFICADOR_INFORMADO
+```
+
+Executar enquanto o arquivo temporário `PREP` ainda existe, ou extraí-lo novamente do mesmo commit como no passo 1. A retomada exige `prepared.sha` igual ao SHA, hashes dos arquivos de configuração/SQLite e manifesto `source.sha256` íntegros, além de health interno. Não faz build, up, novo backup ou confirmação textual; não depende de resposta em maiúsculas. Release incompleta/antiga sem esses manifestos exige revisão e nova preparação, sem apagar os arquivos anteriores. O runtime em execução pode usar um override de release anterior: os arquivos efetivos continuam sendo descobertos pelas labels do container, não por um Compose presumido.
+
+O hotfix informado de `RINNE_PUBLISH` é tratado estritamente: só o valor efetivo da **API** pode ser preservado num override privado, inclusive no rollback. Não altera o ambiente do frontend ou os arquivos compartilhados. Divergências de outras variáveis, credenciais, proxy, labels, portas ou volumes continuam interrompendo a preparação; não há reconciliação genérica de configurações.
+
 ## 2. Revisar a candidata
 
 O preparador informa os caminhos `Release` e `Backup privado`. Definir exatamente esses caminhos, sem alterar os arquivos de ambiente:
@@ -48,6 +60,7 @@ source "$RELEASE/compose-args.private.sh"
 sha256sum --check "$BACKUP/input-files.sha256"
 sha256sum --check "$BACKUP/app.db.sha256"
 "${COMPOSE[@]}" -f "$RELEASE/compose.override.json" config --quiet
+(cd "$RELEASE"; sha256sum --check --status source.sha256)
 ```
 
 Revisar localmente o override, que não contém os segredos, e o diff privado de código/nginx. Confirmar a manutenção do projeto `quest-rinne-web`, da porta 18372 conforme configuração efetiva, dos mounts do SQLite/allowlist/htpasswd, da rede `quest-rinne_private`, da `DATABASE_URL` e role existentes e das labels/regras atuais do Traefik. Os snapshots privados não devem ser exibidos integralmente no terminal compartilhado. Não avançar se houver hotfix local relevante ainda não incorporado ao código revisado.
@@ -63,9 +76,12 @@ Somente após revisar a candidata e confirmar os backups, na mesma sessão:
 sha256sum --check "$BACKUP/input-files.sha256"
 "${COMPOSE[@]}" -f "$RELEASE/compose.override.json" up -d --no-deps --no-build api web
 "${COMPOSE[@]}" -f "$RELEASE/compose.override.json" ps api web
+bash "$RELEASE/deploy/check-release.sh" "$RELEASE"
 ```
 
 Esses comandos preservam as referências originais de ambiente e volumes. Não executar `down -v`, `git clean`, `git reset --hard`, substituição de banco, criação de role, migrations analíticas ou comandos de n8n. A versão não adiciona migration SQLite.
+
+O override passa `RINNE_COMMIT_SHA` aos dois builds. A verificação posterior exige revisão das imagens igual ao SHA, SHA-256 dos arquivos instalados da API/shared igual a `code.sha256`, integridade dos assets web contra o manifesto gerado no build e health interno com PostgreSQL conectado. Falha de hash não deve ser ignorada. Docker real, labels e arquivos instalados só serão comprovados quando o operador executar esse passo; não foram acessados nesta tarefa.
 
 ## 4. Validar e acompanhar
 

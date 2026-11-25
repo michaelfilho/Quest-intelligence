@@ -43,13 +43,12 @@ export function cashProfile(s: SchemaSnapshot): CashProfile {
     if (!candidates.includes(selected as ParentTarget) || (declaredTargets.length && !declaredTargets.includes(selected as ParentTarget))) throw new SourceLimitation("Namespace financeiro configurado ausente ou em conflito com a constraint declarada.");
     declaredTarget = selected as ParentTarget;
   }
-  for (const name of ["competence_date"]) if (cols.some(c => c.column === name && !temporalTypes.has(c.type))) throw new SourceLimitation("Tipo de competência financeira incompatível.");
   return { type: types[0] as CashProfile["type"], parent: (parents[0] as ParentField) ?? null, candidates, declaredTarget,
-    hasCompetence: cols.some(c => c.column === "competence_date"), hasJob: cols.some(c => c.column === "job_id"),
+    hasCompetence: cols.some(c => c.column === "competence_date"&&temporalTypes.has(c.type)), hasJob: cols.some(c => c.column === "job_id"),
     hasCategory: cols.some(c => c.column === "category_id" && idTypes.has(c.type)),hasAccount:cols.some(c=>c.column==='account_id'&&idTypes.has(c.type)) };
 }
 
-export async function validatedCashProfile(s: SchemaSnapshot, reader: Reader, filters?: Filters): Promise<CashProfile> {
+export async function validatedCashProfile(s: SchemaSnapshot, reader: Reader, filters?: Filters,temporal:'payment_date'|'competence_date'='payment_date'): Promise<CashProfile> {
   const profile = cashProfile(s);
   if (!profile.parent) throw new SourceLimitation("Vínculo-pai não mapeado: natureza econômica não é presumida.");
   const valid: ParentTarget[] = [];
@@ -59,14 +58,14 @@ export async function validatedCashProfile(s: SchemaSnapshot, reader: Reader, fi
   if (!targets.length) throw new SourceLimitation('Relacionamento inválido: nenhum namespace de identidade suportado.');
   const unique=s.constraints.some(c=>c.schema==='core'&&c.table==='financial_entries'&&['p','u'].includes(c.type)&&/^(?:PRIMARY KEY|UNIQUE(?: NULLS NOT DISTINCT)?)\s*\(iclips_id\)/.test(c.def.replaceAll('"','')));
   if (!unique) {
-    const src=filters?cashSource(filters,{...profile,target:targets[0]}):null;
+    const src=filters?cashSource(filters,{...profile,target:targets[0]},temporal):null;
     const [identity]=await reader(`WITH scoped AS (${src?src.sql:`SELECT iclips_id,${profile.type}::text AS tipo,payment_date FROM core.financial_entries`})
       SELECT EXISTS(SELECT 1 FROM scoped WHERE tipo IN ('Entrada','Saída') AND payment_date::timestamptz<=CURRENT_TIMESTAMP
         GROUP BY iclips_id HAVING iclips_id IS NULL OR count(*)>1) AS duplicate`,src?.params??[]);
     if(identity.duplicate)throw new SourceLimitation('Relacionamento inválido: identidade financeira ausente ou duplicada nas movimentações do escopo.');
   }
   for (const target of targets) {
-    const scope = filters ? cashSource(filters, { ...profile, target }) : null;
+    const scope = filters ? cashSource(filters, { ...profile, target },temporal) : null;
     const [r] = await reader(`WITH relevant AS (
       ${scope ? scope.sql : `SELECT * FROM core.financial_entries`}
     ), relevant_keys AS (
@@ -99,7 +98,7 @@ export async function validatedCashProfile(s: SchemaSnapshot, reader: Reader, fi
 function assertCashFilters(f: Filters) {
   for (const k of ["department", "employee", "service", "status"] as const) if (f[k]) throw new SourceLimitation(`Filtro ${k} não comprovado para movimentações financeiras.`);
 }
-export async function scopedProfile(f: Filters, reader: Reader, provided?: SchemaSnapshot) {
+export async function scopedProfile(f: Filters, reader: Reader, provided?: SchemaSnapshot,temporal:'payment_date'|'competence_date'='payment_date') {
   assertCashFilters(f); // não consultar dados globais para um escopo que não pode ser aplicado
   const snapshot = provided ?? await runtimeSchema();
   if (f.client || f.group || f.project) {
@@ -107,14 +106,15 @@ export async function scopedProfile(f: Filters, reader: Reader, provided?: Schem
     validateStatement(snapshot, `SELECT ${fields.map(c => 'j.'+c).join(',')} FROM core.jobs j`);
     await validateJobIdentity(snapshot, reader);
   }
-  return validatedCashProfile(snapshot, reader, f);
+  return validatedCashProfile(snapshot, reader, f,temporal);
 }
-export function cashSource(f: Filters, profile: CashProfile) {
+export function cashSource(f: Filters, profile: CashProfile,temporal:'payment_date'|'competence_date'='payment_date') {
   if (!profile.target) throw new SourceLimitation("O namespace do vínculo-pai ainda não foi validado.");
   assertCashFilters(f);
+  if(temporal==='competence_date'&&!profile.hasCompetence)throw new SourceLimitation('Campo ausente/incompatível: competence_date temporal.');
   const params: unknown[] = [f.start, f.end];
-  const predicates = ["f.payment_date::timestamptz >= ($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo')",
-    "f.payment_date::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo')"];
+  const predicates = [`f.${temporal}::timestamptz >= ($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo')`,
+    `f.${temporal}::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo')`];
   for (const [key, field] of [["client", "client_id"], ["group", "client_group_id"], ["project", "iclips_id"]] as const) {
     if (f[key]) {
       if (!profile.hasJob) throw new SourceLimitation("Vínculo com projeto ausente no financeiro.");
@@ -123,6 +123,7 @@ export function cashSource(f: Filters, profile: CashProfile) {
   }
   const standalone = profile.parent ? `f.${profile.parent} IS NULL AND NOT EXISTS(SELECT 1 FROM core.financial_entries child WHERE child.${profile.parent}::text = f.${profile.target}::text)` : "FALSE";
   return { params, sql: `SELECT f.iclips_id, ${profile.hasJob ? "f.job_id" : "NULL::text AS job_id"}, ${profile.hasCategory ? "f.category_id" : "NULL::text AS category_id"}, f.payment_date, ${profile.hasCompetence ? "f.competence_date" : "NULL::date AS competence_date"},
+    to_jsonb(f)->>'id' AS row_id,
     ${profile.hasAccount?'f.account_id':'NULL::text AS account_id'},
     f.${profile.type}::text AS tipo, CASE WHEN f.amount::text NOT IN ('NaN','Infinity','-Infinity') THEN f.amount::numeric ELSE NULL END AS valor, (${standalone}) AS standalone
     FROM core.financial_entries f WHERE ${predicates.join(" AND ")}` };
@@ -256,11 +257,12 @@ export async function classifiedCash(id:string,f:Filters,reader:Reader=q,provide
 }
 export async function costCenterLinks(f:Filters,p:Page,reader:Reader=q,provided?:SchemaSnapshot) {
   const s=provided??await runtimeSchema(),profile=await scopedProfile(f,reader,s);
-  if (!['financial_entry_id','cost_center_id'].every(column=>s.columns.some(c=>c.schema==='core'&&c.table==='financial_entry_cost_centers'&&c.column===column))) throw new SourceLimitation('Campo ausente: chaves explícitas dos vínculos de centros de custo não disponíveis.');
+  const center=s.columns.some(c=>c.schema==='core'&&c.table==='financial_entry_cost_centers'&&c.column==='source_center_id')?'source_center_id':'cost_center_id';
+  if (!['financial_entry_id',center].every(column=>s.columns.some(c=>c.schema==='core'&&c.table==='financial_entry_cost_centers'&&c.column===column))) throw new SourceLimitation('Campo ausente: chaves explícitas dos vínculos de centros de custo não disponíveis.');
   const src=cashSource(f,profile),sort=p.sort??'data';
   if (!['data','tipo','valor','centros'].includes(sort)) throw new SourceLimitation('Coluna de vínculo não disponível para ordenação.');
   const r=await paginate(`WITH source AS (${src.sql}), links AS (
-    SELECT financial_entry_id::text AS entry_key,count(DISTINCT cost_center_id)::int AS centros
+    SELECT financial_entry_id::text AS entry_key,count(DISTINCT ${center})::int AS centros
     FROM core.financial_entry_cost_centers GROUP BY financial_entry_id::text
   ) SELECT s.iclips_id AS id,s.payment_date AS data,s.tipo,s.valor,coalesce(l.centros,0) AS centros,
     CASE WHEN l.centros>0 THEN 'Vínculos presentes; rateio monetário não comprovado' ELSE 'Sem vínculo disponível' END AS situacao

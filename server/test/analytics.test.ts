@@ -68,7 +68,8 @@ test("PostgreSQL: gráficos usam a mesma base de cards e filtros", async () => {
 });
 test("filtros incompatíveis são recusados antes do SQL, inclusive escopo financeiro", () => {
   assert.throws(() => sourceStatement("invoices", { ...f, department: "A" }), SourceLimitation);
-  assert.throws(() => sourceStatement("invoices", { ...f, client: "10" }), SourceLimitation);
+  const client=sourceStatement('invoices',{...f,client:"10' OR 1=1 --"});
+  assert.ok(!client.sql.includes("10' OR"));assert.ok(client.params.includes("10' OR 1=1 --"));
   assert.throws(() => sourceStatement("time", { ...f, service: "99" }), SourceLimitation);
   assert.throws(() => sourceStatement("jobs", { ...f, department: "A" }), SourceLimitation);
 });

@@ -4,7 +4,7 @@ import { SourceLimitation } from './source-errors.js';
 const field=z.string().regex(/^[a-z_][a-z0-9_]*$/).max(63);
 const configured=z.object({approved:z.literal(true),kind:field,taskId:field,stepId:field,pieceId:field}).strict();
 export function activityKeys(s:SchemaSnapshot) {
-  let keys={kind:'source_kind',taskId:'task_id',stepId:'workflow_step_id',pieceId:'job_piece_id'};
+  let keys={kind:'source_kind',taskId:'task_id',stepId:s.columns.some(c=>c.schema==='core'&&c.table==='time_entries'&&c.column==='workflow_id')?'workflow_id':'workflow_step_id',pieceId:'job_piece_id'};
   if (process.env.TIME_ACTIVITY_KEYS) {
     try {keys=configured.parse(JSON.parse(process.env.TIME_ACTIVITY_KEYS));}
     catch {throw new SourceLimitation('Relacionamento inválido: perfil explícito TIME_ACTIVITY_KEYS deve conter identificadores válidos e aprovação.');}

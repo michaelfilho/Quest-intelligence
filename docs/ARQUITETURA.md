@@ -4,7 +4,7 @@
 
 `schema.ts` consulta o catálogo PostgreSQL pela conexão já existente, com cache de estrutura em memória de cinco minutos. O CLI `introspect` usa a mesma descoberta. `mappings.ts` registra consultas de `analytics.ts`, `cash.ts`, `quality.ts` e `registry-counts.ts`; colunas e tipos precisam corresponder a perfis explícitos. Não existe reconhecimento de fórmulas por heurística nem cópia dos registros para outro banco.
 
-São 53 indicadores com SQL condicional, 21 gráficos e 17 tabelas; os demais 25 indicadores têm limitações explícitas. Nenhum foi certificado com dados reais nesta execução. Resultados parciais e em reconciliação carregam período, campo temporal, cobertura, exclusões e limitações. Fotografias de cadastro/monitoramento não fabricam comparação histórica.
+São 85 indicadores com SQL condicional, 28 gráficos e 31 tabelas; os demais 22 indicadores têm limitações explícitas. Nenhum foi certificado com dados reais nesta execução. Resultados parciais e em reconciliação carregam período, campo temporal, cobertura, exclusões e limitações. Fotografias de cadastro/monitoramento não fabricam comparação histórica.
 
 A interface atualiza consultas a cada 60 segundos enquanto ativa. O n8n continua somente alimentando o PostgreSQL existente. O backend permanece intermediário obrigatório, aplicando permissões e escopo antes da consulta.
 
@@ -58,3 +58,6 @@ Rotas carregadas sob demanda (bundle inicial de 334 kB); paginação e ordenaç�
 ## Evolução futura (fora da 1.0)
 
 IA, voz e Modo reunião foram implementados e depois retirados do escopo. O trabalho completo está na branch `archive/ia-voz-reuniao` (commit `781299a`), sem credenciais, e pode servir de base. Nenhuma dessas funcionalidades existe na versão ativa.
+
+
+Fase 2: `dre.ts`, `allocations.ts`, `invoice-links.ts`/`documents.ts`, `production.ts`, `project-observations.ts` e `publications.ts` mantem SELECTs parametrizados no mesmo backend. Nao persistem dados analiticos. Perfis de cardinalidade/identidade e detalhes de bases e permissoes: [FASE_2_INTEGRACAO.md](FASE_2_INTEGRACAO.md).

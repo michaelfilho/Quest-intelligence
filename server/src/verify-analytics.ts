@@ -6,6 +6,9 @@ import { resolveIndicator } from "./services.js";
 import { runtimeSchema } from './schema.js';
 import { operationalDimension } from './analytics.js';
 import { cashRecords } from './cash.js';
+import {cashSource,scopedProfile} from './cash.js';
+import {allocationSource,allocationChart} from './allocations.js';
+import {metricRecords} from './analytics.js';
 import { workedActivities } from './activities.js';
 import { SourceLimitation } from './source-errors.js';
 const { values } = parseArgs({ options: { start: { type: "string" }, end: { type: "string" } } });
@@ -105,6 +108,48 @@ try {
     const [r]=await q(`SELECT ${expression} AS value FROM ${schema}.${table}`);
     const indicator=await verifiedIndicator(id);
     return r.value==null?indicator.value==null:indicator.status==='OK'&&String(indicator.value)===String(r.value);
+  });
+  for(const [table,key]of [['jobs','iclips_id'],['employees','iclips_id'],['departments','id'],['clients','iclips_id'],['financial_categories','iclips_id'],['financial_accounts','iclips_id']] as const)await check(`cardinality_${table}`,async()=>{
+    if(!snapshot.columns.some(c=>c.schema==='core'&&c.table===table&&c.column===key))throw new SourceLimitation('Fonte ausente');
+    const [r]=await q(`SELECT EXISTS(SELECT 1 FROM core.${table} WHERE ${key} IS NOT NULL GROUP BY ${key} HAVING count(*)>1) AS duplicate`);
+    return !r.duplicate;
+  });
+  for(const [id,expression]of [
+    ['receita_recebida',"sum(s.valor) FILTER (WHERE s.tipo='Entrada' AND c.classification='RECEITAS OPERACIONAIS')"],
+    ['despesas',"sum(s.valor) FILTER (WHERE s.tipo='Saída' AND c.classification IN ('DESPESAS OPERACIONAIS CUSTO FIXO','DESPESAS OPERACIONAIS CUSTO VARIÁVEL'))"],
+  ] as const)await check(`dre_${id}`,async()=>{
+    if(!['iclips_id','dre_indicator'].every(column=>snapshot.columns.some(c=>c.schema==='core'&&c.table==='financial_categories'&&c.column===column)))throw new SourceLimitation('Campo ausente');
+    const profile=await scopedProfile(f,q,snapshot),source=cashSource(f,profile);
+    const [r]=await q(`WITH source AS (${source.sql}),categories AS (SELECT iclips_id,CASE WHEN count(*)=1 THEN max(dre_indicator::text) END AS classification FROM core.financial_categories GROUP BY iclips_id)
+      SELECT coalesce(${expression},0)::float8 AS expected,count(*)::int AS used FROM source s LEFT JOIN categories c ON c.iclips_id::text=s.category_id::text
+      WHERE s.standalone AND s.valor IS NOT NULL AND s.payment_date::timestamptz<=CURRENT_TIMESTAMP AND s.tipo IN ('Entrada','Saída')`,source.params);
+    if(!Number(r.used))throw new SourceLimitation('Sem base');
+    return Math.abs(Number((await verifiedIndicator(id)).value)-Number(r.expected))<1e-6;
+  });
+  await check('operating_cash_identity',async()=>{
+    const [revenue,fixed,variable,result,margin]=await Promise.all(['receita_recebida','despesas_fixas','despesas_variaveis','resultado_operacional','margem_operacional'].map(verifiedIndicator));
+    const expected=Number(revenue.value)-Number(fixed.value)-Number(variable.value);
+    return Math.abs(expected-Number(result.value))<1e-6&&Number(revenue.value)>0&&Math.abs(expected/Number(revenue.value)-Number(margin.value))<1e-6;
+  });
+  await check('registered_cost_records',async()=>{
+    const indicator=await verifiedIndicator('custo_mao_de_obra');let sum=0,total=0;
+    for(let page=1;;page++){const rows=await metricRecords('custo_mao_de_obra',f,{page,pageSize:500});sum+=rows.rows.reduce((n,r)=>n+Number(r.custo_registrado),0);total+=rows.rows.length;if(total>=rows.total)break;}
+    return Math.abs(sum-Number(indicator.value))<1e-6;
+  });
+  await check('positive_cost_hours_partition',async()=>{
+    const [withCost,withoutCost,hours]=await Promise.all(['horas_com_custo_positivo','horas_sem_custo_positivo','horas_registradas'].map(verifiedIndicator));
+    return Math.abs(Number(withCost.value)+Number(withoutCost.value)-Number(hours.value))<1e-6;
+  });
+  await check('allocated_centers_conservation',async()=>{
+    const source=await allocationSource(f),[rows,indicator]=await Promise.all([q(`WITH entries AS (${source.sql}) SELECT sum(valor) FILTER (WHERE allocation_status='Conciliado')::float8 AS expected FROM entries`,source.params),verifiedIndicator('despesas_rateadas')]);
+    const chart=await allocationChart(f);const points=chart.points;
+    // O gráfico é top 50; não presumir que ele cobre todos os centros.
+    const [r]=await q(`WITH entries AS (${source.sql}),links AS (${source.links}) SELECT sum(l.amount)::float8 AS actual FROM entries e JOIN links l ON l.entry_key=e.financial_key WHERE e.allocation_status='Conciliado'`,source.params);
+    return Math.abs(Number(r.actual??0)-Number(rows[0].expected??0))<1e-6&&Math.abs(Number(indicator.value)-Number(r.actual??0))<1e-6&&points.every(p=>Number.isFinite(Number(p.despesa)));
+  });
+  await check('publication_state_rows',async()=>{
+    if(!snapshot.columns.some(c=>c.schema==='audit'&&c.table==='qpf11_publication_state'&&c.column==='source_id'))throw new SourceLimitation('Fonte ausente');
+    const [r]=await q('SELECT count(*)::int AS expected FROM audit.qpf11_publication_state');return Number((await verifiedIndicator('estados_publicacao')).value)===Number(r.expected);
   });
   console.log(JSON.stringify({verification:failures?'FAIL':unavailable?'PARTIAL':'PASS'}));
   process.exitCode = failures ? 1 : unavailable?2:0;

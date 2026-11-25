@@ -2,7 +2,7 @@
 
 Plataforma de inteligência econômica, financeira e operacional da Quest Comunicação. Lê o PostgreSQL `quest_rinne` (schemas `core`, `ingest`, `audit`) **somente para leitura** e apresenta indicadores rastreáveis, calculados de forma determinística.
 
-> **Integração:** o backend usa a conexão existente e descobre colunas, tipos e constraints em tempo de execução. Há 53 indicadores com SQL, 21 gráficos e 17 tabelas mapeados, condicionados à introspecção. Resultados permanecem parciais ou em reconciliação até a validação real. Outros 25 indicadores têm motivos explícitos de indisponibilidade. Não há cópia do banco analítico nem zeros ou dados simulados para preencher ausências. [Integração e limitações](docs/INTEGRACAO_POSTGRESQL.md). [Correções, perfis e fontes pendentes](docs/CORRECOES_RELACIONAMENTOS.md).
+> **Integração:** o backend usa a conexão existente e descobre colunas, tipos e constraints em tempo de execução. Há 85 indicadores com SQL, 28 gráficos e 31 tabelas mapeados, condicionados à introspecção. Resultados permanecem parciais ou em reconciliação até a validação real. Outros 22 indicadores têm motivos explícitos de indisponibilidade. Não há cópia do banco analítico nem zeros ou dados simulados para preencher ausências. [Integração e limitações](docs/INTEGRACAO_POSTGRESQL.md). [Fase 2: integração e critérios](docs/FASE_2_INTEGRACAO.md).
 
 **Módulos:** Visão geral · Clientes · Projetos / Jobs · Rentabilidade · Financeiro · Timesheet · Departamentos · Colaboradores · Produtividade · Produção · Contratos · Capacidade operacional · Eficiência · Contratado × executado · Qualidade dos dados · Relatórios (PDF, CSV, XLSX, Markdown) · Configurações (usuários, perfis, IP, sessões, auditoria, segurança).
 

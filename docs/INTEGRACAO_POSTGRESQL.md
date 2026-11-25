@@ -56,3 +56,6 @@ Ver [dicionário](DICIONARIO_INDICADORES.md), [testes](TESTES.md) e [pendências
 
 
 Revisao posterior: nomes, estimativas parciais, custos, politicas e qualidade pontual estao detalhados em [CORRECOES_RELACIONAMENTOS.md](CORRECOES_RELACIONAMENTOS.md). Opcoes de filtros integrados tambem renovam em 60 segundos quando visiveis; servico sem fonte nao gera polling.
+
+
+A fase 2 substitui as limitacoes ja resolvidas de DRE, documentos, rateios e workflow_id: [FASE_2_INTEGRACAO.md](FASE_2_INTEGRACAO.md). Fotografias e perspectivas continuam parciais, sem certificacao de producao.

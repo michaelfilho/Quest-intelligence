@@ -1,3 +1,5 @@
+> Registro da primeira revisao local. Campos confirmados posteriormente, regras e contagens atuais: [FASE_2_INTEGRACAO.md](FASE_2_INTEGRACAO.md).
+
 # Correção dos relacionamentos e indicadores
 
 Revisão local posterior à versão `d4c3f4671fd624967a3836885473bbdaf428d39e`. Sem acesso à VPS/PostgreSQL externo, alteração de banco/n8n ou deploy. O código usa a conexão já configurada no backend. A publicação desta revisão depende de autorização posterior; o commit é preparado localmente.

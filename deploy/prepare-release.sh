@@ -12,6 +12,22 @@ cd "$SOURCE"
 git cat-file -e "$SHA^{commit}"
 git merge-base --is-ancestor "$SHA" origin/main
 [[ "$(realpath "$RUNTIME")" == "$RUNTIME" ]] || { echo 'Runtime redirecionado; revisar caminhos' >&2; exit 1; }
+if [[ "${2:-}" == '--resume' ]]; then
+  STAGE="${3:?Informe o diretório da release preparada}"
+  [[ "$(realpath "$STAGE")" == "$STAGE" && "$STAGE" == "$RUNTIME/.releases/"* && "$(dirname "$STAGE")" == "$RUNTIME/.releases" ]]
+  [[ "$(cat "$STAGE/prepared.sha")" == "$SHA" ]]
+  STAMP="$(basename "$STAGE")"
+  BACKUP="/opt/backups/quest-rinne/$STAMP"
+  [[ "$(realpath "$BACKUP")" == "$BACKUP" ]]
+  sha256sum --check --status "$BACKUP/input-files.sha256"
+  sha256sum --check --status "$BACKUP/app.db.sha256"
+  (cd "$STAGE"; sha256sum --check --status source.sha256)
+  [[ -s "$STAGE/compose.override.json" && -s "$BACKUP/rollback.private.json" ]]
+  docker exec "$API" node -e "$(cat "$STAGE/deploy/check-api.cjs");check().catch(()=>process.exit(1));"
+  printf 'RETOMADA, sem novo backup ou deploy.\nRelease: %s\nBackup privado: %s\n' "$STAGE" "$BACKUP"
+  exit 0
+fi
+[[ $# == 1 ]] || { echo 'Argumentos inválidos' >&2; exit 1; }
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)-${SHA:0:10}"
 STAGE="$RUNTIME/.releases/$STAMP"
 BACKUP="/opt/backups/quest-rinne/$STAMP"
@@ -19,6 +35,9 @@ BACKUP="/opt/backups/quest-rinne/$STAMP"
 mkdir -p "$STAGE" "$BACKUP"
 chmod 700 "$STAGE" "$BACKUP"
 git archive "$SHA" | tar -x -C "$STAGE"
+# Manifestos verificam arquivos de origem antes de construir e o código da API instalada.
+while IFS= read -r f; do (cd "$STAGE"; sha256sum -- "$f"); done < <(git ls-tree -r --name-only "$SHA" -- server shared web deploy package.json) > "$STAGE/source.sha256"
+while IFS= read -r f; do (cd "$STAGE"; sha256sum -- "$f"); done < <(git ls-tree -r --name-only "$SHA" -- server/src shared) > "$STAGE/code.sha256"
 
 # Descobrir a configuração efetiva pelas labels, sem presumir os ajustes da cópia runtime.
 WORKDIR="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$API")"
@@ -73,8 +92,9 @@ private_input() {
   printf '{"config":'; cat "$BACKUP/effective.private.json"
   printf ',"containers":'; cat "$BACKUP/containers.private.json"; printf '}'
 }
-private_input | docker exec -i "$API" node -e "$RENDER" -- --prepare-release "$STAGE" > "$STAGE/compose.override.json"
-private_input | docker exec -i "$API" node -e "$RENDER" -- --prepare-release "$STAGE" "{\"api\":\"$PREV_API\",\"web\":\"$PREV_WEB\"}" > "$BACKUP/rollback.private.json"
+private_input | docker exec -i "$API" node -e "$RENDER" -- --prepare-release "$STAGE" '{}' "$SHA" > "$STAGE/compose.override.json"
+private_input | docker exec -i "$API" node -e "$RENDER" -- --prepare-release "$STAGE" "{\"api\":\"$PREV_API\",\"web\":\"$PREV_WEB\"}" "$SHA" > "$BACKUP/rollback.private.json"
 chmod 600 "$STAGE/compose.override.json" "$STAGE/compose-args.private.sh" "$BACKUP/"*
+printf '%s\n' "$SHA" > "$STAGE/prepared.sha"
 printf 'PREPARADO, sem deploy.\nRelease: %s\nBackup privado: %s\n' "$STAGE" "$BACKUP"
 printf 'Revisar configurações privadas e mounts antes de executar build/up conforme docs/ATUALIZACAO_PRODUCAO.md.\n'

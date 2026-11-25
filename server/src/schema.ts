@@ -55,8 +55,9 @@ export function mappingCapabilities(s: SchemaSnapshot) {
       return [table, { available: reason === null, reason, missing: cols.filter(col => !available.has(`${table}.${col}`)), note: "Perfil completo de referência. Consultas individuais exigem somente campos efetivamente usados." }];
     })),
     relationships: DECLARED_RELATIONSHIPS.map(([from, field, to, target]) => ({ from: `core.${from}.${field}`, to: `core.${to}.${target}`,
-      declared: true, columnsPresent: available.has(`${from}.${field}`) && available.has(`${to}.${target}`),
-      note: "Relação explícita do contrato; presença de colunas não comprova integridade dos dados. Constraints declaradas são listadas separadamente." })),
+      declared: from!=='financial_entry_cost_centers', columnsPresent: available.has(`${from}.${field}`) && available.has(`${to}.${target}`),
+      ...(from==='financial_entry_cost_centers'?{candidateTargets:['id','iclips_id'].filter(key=>available.has(`financial_entries.${key}`)).map(key=>`core.financial_entries.${key}`)}:{}),
+      note: from==='financial_entry_cost_centers'?'Identidade financeira candidata; o perfil de rateio valida id/iclips_id por FK ou dados unívocos antes de consultar valores.':'Relação explícita do contrato; presença de colunas não comprova integridade dos dados. Constraints declaradas são listadas separadamente.' })),
   };
 }
 
@@ -85,6 +86,11 @@ export function validateStatement(s: SchemaSnapshot, sql: string) {
 }
 
 export function prepareStatement(s: SchemaSnapshot, sql: string) {
+  if(sql.includes('/* invoice_document_link */')) {
+    for(const [table,fields]of [['clients',['iclips_id','document']],['invoices',['client_document']]] as const) {
+      for(const field of fields)if(!s.columns.some(c=>c.schema==='core'&&c.table===table&&c.column===field))throw new SourceLimitation(`Campo ausente: ${table}.${field} para vínculo por documento.`);
+    }
+  }
   const has = (table: string, column: string) => s.columns.some(c => c.schema === SCHEMAS.core && c.table === table && c.column === column);
   if (sql.includes("core.time_entries")) {
     if (!has("time_entries", "duration_seconds") && !has("time_entries", "duration_minutes")) throw new SourceLimitation("Nenhuma duração comprovada no timesheet.");

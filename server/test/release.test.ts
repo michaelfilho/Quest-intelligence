@@ -63,3 +63,31 @@ test("backup SQLite consistente funciona em conexão de leitura e verifica integ
     const copy=new DatabaseSync(target,{readOnly:true});assert.equal(copy.prepare('PRAGMA integrity_check').get()?.integrity_check,'ok');assert.equal(copy.prepare('SELECT count(*) n FROM sample').get()?.n,1);copy.close();
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
+test('hotfix RINNE_PUBLISH é preservado somente para API; outros ambientes e frontend continuam validados',()=>{
+  const source=config() as any;source.services.api.environment.RINNE_PUBLISH='shared';
+  const containers=['api','web'].map(service=>({Config:{Labels:{'com.docker.compose.service':service,'com.docker.compose.project':'quest-rinne-web',...(service==='web'?{'traefik.test':'preservar'}:{})},Env:Object.entries(source.services[service].environment).map(([k,v])=>`${k}=${service==='api'&&k==='RINNE_PUBLISH'?'api-local':v}`)},Mounts:service==='api'?[{Destination:'/app/server/data',Source:'/opt/private/data'}]:[]}));
+  const reconciled=verifyRunning(source,containers),sha='a'.repeat(40),stage='/opt/apps/quest-rinne-web-runtime/.releases/test';
+  assert.equal(reconciled.api.RINNE_PUBLISH,'api-local');
+  const rollback=renderRelease(source,stage,{api:'previous-api',web:'previous-web'},sha,reconciled);
+  assert.equal(rollback.services.api.environment.RINNE_PUBLISH,'api-local');assert.ok(!rollback.services.web.environment);
+  const override=renderRelease(source,stage,undefined,sha,reconciled);
+  assert.equal(override.services.api.environment.RINNE_PUBLISH,'api-local');assert.equal(override.services.web.environment,undefined);
+  assert.equal(override.services.api.build.args.RINNE_COMMIT_SHA,sha);assert.equal(override.services.web.build.args.RINNE_COMMIT_SHA,sha);
+  assert.ok(!JSON.stringify(override).includes('fixture-readonly'));
+  containers[1].Config.Env=['API_UPSTREAM=changed'];assert.throws(()=>verifyRunning(source,containers),/web\/API_UPSTREAM/);
+});
+test('CLI com marcador vazio prepara build com revisão, preservando imagens de rollback separadas',()=>{
+  const source=config();const containers=['api','web'].map(service=>({Config:{Labels:{'com.docker.compose.service':service,'com.docker.compose.project':'quest-rinne-web',...(service==='web'?{'traefik.test':'preservar'}:{})},Env:Object.entries(source.services[service as 'api'|'web'].environment).map(([k,v])=>`${k}=${v}`)},Mounts:service==='api'?[{Destination:'/app/server/data',Source:'/opt/private/data'}]:[]}));
+  const script=readFileSync(new URL('../../deploy/render-release.cjs',import.meta.url),'utf8'),sha='b'.repeat(40);
+  const r=spawnSync(process.execPath,['-e',script,'--','--prepare-release','/opt/apps/quest-rinne-web-runtime/.releases/test','{}',sha],{input:JSON.stringify({config:source,containers}),encoding:'utf8'});
+  assert.equal(r.status,0,r.stderr);const output=JSON.parse(r.stdout);
+  assert.ok(output.services.api.build);assert.ok(!output.services.api.image);assert.equal(output.services.api.build.args.RINNE_COMMIT_SHA,sha);
+  assert.ok(!r.stdout.includes('fixture-readonly'));
+  assert.throws(()=>renderRelease(source,'/opt/apps/quest-rinne-web-runtime/.releases/test',{api:'old'}),/incompletas/);
+});
+test('retomada verifica identidade e integridade antes de sair, sem refazer backup; validação instalada não faz rollback',()=>{
+  const prepare=readFileSync(new URL('../../deploy/prepare-release.sh',import.meta.url),'utf8'),resume=prepare.split("if [[ \"${2:-}\" == '--resume' ]]; then")[1]?.split('fi\n')[0];
+  assert.ok(resume?.includes('prepared.sha'));assert.ok(resume?.includes('source.sha256'));assert.ok(resume?.includes('app.db.sha256'));assert.ok(resume?.includes('exit 0'));assert.ok(!resume?.includes('VACUUM'));
+  const check=readFileSync(new URL('../../deploy/check-release.sh',import.meta.url),'utf8');
+  assert.ok(check.includes('code.sha256'));assert.ok(check.includes('org.opencontainers.image.revision'));assert.ok(check.includes('web-assets.sha256'));assert.ok(!/up -d|rollback\.private/.test(check));
+});

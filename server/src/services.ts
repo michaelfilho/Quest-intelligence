@@ -2,6 +2,8 @@
 import { previousPeriod } from "../../shared/contracts.js";
 import type { ChartResult, DbState, Dimension, DimensionResult, Filters, IndicatorResult, ModuleDef, ModuleResult, ResultStatus, TableResult } from "../../shared/contracts.js";
 import { dbState } from "./db.js";
+import {q} from './db.js';
+import {runtimeSchema} from './schema.js';
 import { chartImpls, dimensionImpls, indicatorImpls, tableImpls, type Page } from "./mappings.js";
 import { SourceLimitation } from "./analytics.js";
 import { mappingLimitation } from "./mapping-limitations.js";
@@ -102,9 +104,21 @@ export async function resolveModule(m: ModuleDef, f: Filters, allow: { indicator
     Promise.all(m.indicators.map((id) => (allow.indicator(id) ? resolveIndicator(id, f, state) : { ...unavailable(id, "FORBIDDEN"), value: null, previous: null }))),
     Promise.all(m.charts.map((id) => (allow.chart(id) ? resolveChart(id, f, state) : { ...unavailable(id, "FORBIDDEN"), series: [], points: [] }))),
   ]);
+  let entityName:string|undefined;
+  if(m.detailOf&&state==='CONNECTED') {
+    const dim=m.detailOf==='client'?'clients':'projects';
+    entityName=(await dimensionImpls[dim]?.(f).catch(()=>[]))?.[0]?.label;
+    if(!entityName&&!f.department) {
+      const id=m.detailOf==='client'?f.client:f.project,table=m.detailOf==='client'?'clients':'jobs',schema=await runtimeSchema();
+      if(id&&['iclips_id','name'].every(column=>schema.columns.some(c=>c.schema==='core'&&c.table===table&&c.column===column))) {
+        const [r]=await q(`SELECT CASE WHEN count(*)=1 THEN max(nullif(btrim(name::text),'')) WHEN count(*)>1 THEN 'Cadastro com chave duplicada' END AS name FROM core.${table} WHERE iclips_id::text=$1`,[id]);
+        entityName=r.name??undefined;
+      }
+    }
+  }
   return {
     module: m.id,
-    ...(m.detailOf ? {entityName:(await dimensionImpls[m.detailOf==='client'?'clients':'projects']?.(f).catch(()=>[]))?.[0]?.label ?? (m.detailOf==='client'?'Cliente sem atividade no per\u00edodo/escopo':'Projeto sem atividade no per\u00edodo/escopo')} : {}),
+    ...(m.detailOf ? {entityName:entityName??(m.detailOf==='client'?'Cliente sem vínculo/nome no escopo':'Projeto sem vínculo/nome no escopo')} : {}),
     generatedAt: new Date().toISOString(),
     database: state,
     filters: f,

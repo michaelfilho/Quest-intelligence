@@ -38,9 +38,15 @@ export async function costTable(f:Filters,p:Page,reader:Query=analyticsQuery) {
 export async function costCoverage(id:string,f:Filters,reader:Query=analyticsQuery) {
   const src=await costSource(f,reader);
   const [r]=await reader(`WITH source AS (${src.sql}) SELECT count(*)::int AS total,
+    count(*) FILTER (WHERE ${valid} AND labor_cost>0)::int AS positives,
+    count(*) FILTER (WHERE NOT (${valid}) OR labor_cost<=0)::int AS nonpositives,
+    sum(seconds)/3600.0 AS total_hours,sum(seconds) FILTER (WHERE ${valid} AND labor_cost>0)/3600.0 AS cost_hours,
+    sum(seconds) FILTER (WHERE NOT (${valid}) OR labor_cost<=0)/3600.0 AS no_positive_hours,
     count(*) FILTER (WHERE ${valid})::int AS covered,count(*) FILTER (WHERE ${valid} AND labor_cost=0 AND seconds>0)::int AS zero
     FROM source WHERE ${eligibleTime}`,src.params);
-  return {value:id==='apontamentos_custo_zero'?Number(r.zero):Number(r.total)>0?Number(r.covered)/Number(r.total):null,
-    reliability:'PARCIAL' as const,recordsUsed:Number(r.covered),recordsExcluded:Number(r.total)-Number(r.covered),reason,temporalField:'started_at',
-    insufficient:!Number(r.total)?'Nenhum apontamento válido no período.':undefined};
+  const value=!Number(r.total)?null:id==='horas_com_custo_positivo'?Number(r.cost_hours??0):id==='horas_sem_custo_positivo'?Number(r.no_positive_hours??0):id==='cobertura_custo_positivo_horas'?Number(r.total_hours)>0?Number(r.cost_hours??0)/Number(r.total_hours):null:id==='apontamentos_custo_zero'?Number(r.zero):Number(r.covered)/Number(r.total);
+  const used=id==='apontamentos_custo_zero'?Number(r.zero):id==='horas_sem_custo_positivo'?Number(r.nonpositives):['horas_com_custo_positivo','cobertura_custo_positivo_horas'].includes(id)?Number(r.positives):Number(r.covered);
+  return {value,
+    reliability:'PARCIAL' as const,recordsUsed:used,recordsExcluded:Number(r.total)-used,reason,temporalField:'started_at',
+    insufficient:value==null?'Nenhum apontamento válido ou denominador de horas positivo no período.':undefined};
 }

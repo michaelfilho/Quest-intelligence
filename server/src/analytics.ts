@@ -8,6 +8,7 @@ export { SourceLimitation } from "./source-errors.js";
 import type { Computed, Page, Rows } from "./mappings.js";
 import { labelledTime, nameSQL, schemaFor } from "./presentation.js";
 import { activityKeys,projectActivityKeys } from './activity-profile.js';
+import { documentClientsCTE,normalizedDocument } from './documents.js';
 
 
 export type Query = <T extends Record<string, any>>(sql: string, params: unknown[]) => Promise<T[]>;
@@ -30,6 +31,7 @@ export const METRICS: Record<string, Metric> = {
   retrabalho: tm("count(*)", { condition: "is_rework IS TRUE", limitation: "Quantidade de apontamentos válidos marcados is_rework; não equivale a tarefas distintas ou alterações de workflow. " + timeNote }),
   percentual_retrabalho: tm("coalesce(sum(seconds) FILTER (WHERE is_rework IS TRUE),0) / nullif(sum(seconds), 0)",{condition:'is_rework IS NOT NULL',limitation:'Percentual no subconjunto de apontamentos válidos com marcação de retrabalho preenchida; marcações ausentes excluídas do numerador e denominador. '+timeNote}),
   colaboradores_ativos: tm("count(DISTINCT employee_id)", { condition: "employee_id IS NOT NULL" }),
+  projetos_atendidos:tm('count(DISTINCT job_id)',{condition:'job_id IS NOT NULL'}),
   clientes_ativos: tm("count(DISTINCT client_id)", { condition: "client_id IS NOT NULL", limitation: "Clientes com apontamentos válidos no período; não representa todo cliente com movimentação financeira ou cadastro ativo. " + timeNote }),
   receita_faturada: im("sum(service_amount)", { condition: "status = 'issued' AND service_amount IS NOT NULL AND service_amount::text NOT IN ('NaN','Infinity','-Infinity')" }),
   faturamento_liquido: im("sum(net_amount)", { amount: "net_amount", condition: "status = 'issued' AND net_amount IS NOT NULL AND net_amount::text NOT IN ('NaN','Infinity','-Infinity')" }),
@@ -43,7 +45,7 @@ export const METRICS: Record<string, Metric> = {
 const domainSupported: Record<Domain, (keyof Filters)[]> = {
   time: ["client", "group", "project", "department", "employee", "status"],
   jobs: ["client", "group", "project", "employee", "status"],
-  invoices: ["status"], clients: [], employees: [], departments: [],
+  invoices: ["status","client"], clients: [], employees: [], departments: [],
 };
 export function validateFilters(domain: Domain, f: Filters) {
   for (const k of ["client", "group", "project", "department", "employee", "service", "status"] as const) {
@@ -93,9 +95,12 @@ export function sourceStatement(domain: Domain, f: Filters, temporal?: string, i
   } else if (domain === "invoices") {
     time(`i.${temporal ?? "issued_at"}`);
     if (f.status) where.push(`i.status = ${bind(f.status)}`);
-    sql = `SELECT i.iclips_id, i.invoice_number, i.status, i.issued_at, i.competence_date,
+    const linked=!!f.client;
+    if(f.client)where.push(`d.client_id::text=${bind(f.client)}`);
+    sql = `${linked?'WITH '+documentClientsCTE():''} SELECT i.iclips_id, i.invoice_number, i.status, i.issued_at, i.competence_date,
       i.service_amount, i.net_amount, i.iss_amount, i.client_name, i.last_seen_at
-      FROM core.invoices i WHERE ${where.join(" AND ")}`;
+      ,to_jsonb(i)->>'client_document' AS client_document
+      FROM core.invoices i ${linked?`LEFT JOIN document_clients d ON d.doc=${normalizedDocument('i.client_document')} AND d.candidates=1`:''} WHERE ${where.join(" AND ")}`;
   } else {
     // Contagens de cadastro são fotografias atuais, não séries históricas.
     sql = `SELECT ${domain === "departments" ? "id" : "iclips_id"} FROM core.${domain} WHERE $1::date <= $2::date`;
@@ -220,12 +225,19 @@ export async function operationalDimension(dim: Dimension, f: Filters, query: Qu
 
 export async function clientTable(f: Filters, p: Page, query: Query = q) {
   const src = sourceStatement("time", f); const schema=await schemaFor(query);
+  const linked=!f.department&&!f.employee&&!f.project&&!f.group&&!f.status&&!f.service&&[['clients','document'],['invoices','client_document']].every(([table,column])=>schema.columns.some(c=>c.schema==='core'&&c.table===table&&c.column===column));
   const sort = p.sort ?? "cliente";
-  if (!["cliente", "grupo", "projetos", "horas"].includes(sort)) throw new SourceLimitation("Coluna sem fonte comprovada para ordenação de clientes.");
-  return paginate(`WITH source AS (${labelledTime(src.sql,schema)}) SELECT client_id AS id,
+  if (!["cliente", "grupo", "projetos", "horas",...(linked?['faturado']:[])].includes(sort)) throw new SourceLimitation("Coluna sem fonte comprovada para ordenação de clientes.");
+  const invoiceSQL=linked?`,${documentClientsCTE()}, invoice_totals AS (
+    SELECT d.client_id,sum(i.service_amount)::numeric AS faturado FROM core.invoices i JOIN document_clients d ON d.doc=${normalizedDocument('i.client_document')} AND d.candidates=1
+    WHERE i.status='issued' AND i.service_amount IS NOT NULL AND i.service_amount::text NOT IN ('NaN','Infinity','-Infinity') AND i.issued_at::timestamptz<=CURRENT_TIMESTAMP
+      AND i.issued_at::timestamptz>=($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo') AND i.issued_at::timestamptz<(($2::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo') GROUP BY d.client_id
+  )`:'';
+  return {...await paginate(`WITH source AS (${labelledTime(src.sql,schema)}), worked AS (SELECT client_id AS id,
     max(client_name) AS cliente, string_agg(DISTINCT group_name, ', ') AS grupo,
     count(DISTINCT job_id)::int AS projetos, sum(seconds) / 3600.0 AS horas FROM source
-    WHERE ${eligibleTime} GROUP BY client_id`, src.params, p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST, id`, query);
+    WHERE ${eligibleTime} GROUP BY client_id) ${invoiceSQL}
+    SELECT w.*,${linked?'it.faturado':'NULL::numeric AS faturado'} FROM worked w ${linked?'LEFT JOIN invoice_totals it ON it.client_id::text=w.id::text':''}`, src.params, p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST, id`, query),reason:'Clientes com apontamento no período. Faturamento documental unívoco aparece somente quando pode ser filtrado no mesmo escopo; ausências e associações ambíguas não viram zero. Demais clientes faturados estão na análise de faturamento por cliente.'};
 }
 
 export async function jobTable(f: Filters, p: Page, query: Query = q) {

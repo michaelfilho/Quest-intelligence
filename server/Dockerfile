@@ -1,5 +1,7 @@
 # Build a partir da RAIZ do projeto (precisa de ../shared):  docker build -f server/Dockerfile .
 FROM node:24-alpine
+ARG RINNE_COMMIT_SHA=unknown
+LABEL org.opencontainers.image.revision=$RINNE_COMMIT_SHA
 WORKDIR /app
 COPY package.json ./
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3333

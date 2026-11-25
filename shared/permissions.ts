@@ -67,6 +67,11 @@ export const MODULE_PERMISSION: Record<string, Permission> = {
 const ITEM_PERMISSION: Record<string, Permission> = {
   lancamentos_futuros: "financeiro.view",
   custo_mao_de_obra: "custos_pessoal.view",
+  horas_com_custo_positivo:'custos_pessoal.view',horas_sem_custo_positivo:'custos_pessoal.view',cobertura_custo_positivo_horas:'custos_pessoal.view',
+  faturamento_por_cliente:'financeiro.view',notas_vinculos:'financeiro.view',rateios_financeiros:'financeiro.view',
+  notas_ambiguas_detalhes:'financeiro.view',notas_sem_vinculo_detalhes:'financeiro.view',
+  dre_categorias:'financeiro.view',dre_contas:'financeiro.view',movimentos_clientes:'financeiro.view',movimentos_projetos:'financeiro.view',conflitos_detalhes:'financeiro.view',
+  entrada:'financeiro.view',saida:'financeiro.view',rateado:'financeiro.view',
   custo_registrado: "custos_pessoal.view",
   cobertura_custos: "custos_pessoal.view",
   apontamentos_custo_zero: "custos_pessoal.view",

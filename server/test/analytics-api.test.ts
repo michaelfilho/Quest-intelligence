@@ -15,7 +15,16 @@ before(async () => {
     ALTER TABLE core.time_entries ADD COLUMN task_id bigint;
     UPDATE core.time_entries SET source_kind='TASK',task_id=7 WHERE job_id=1;
     CREATE TABLE core.job_tasks(job_id bigint,iclips_id bigint,name text,estimated_minutes numeric);
-    INSERT INTO core.job_tasks VALUES(1,7,'Atividade fixture',60)`);
+    INSERT INTO core.job_tasks VALUES(1,7,'Atividade fixture',60);
+    ALTER TABLE core.clients ADD COLUMN document text;
+    ALTER TABLE core.invoices ADD COLUMN client_document text;
+    UPDATE core.clients SET document='12345678909' WHERE iclips_id=10;
+    UPDATE core.invoices SET client_document='123.456.789-09' WHERE iclips_id IN (1,2);
+    CREATE TABLE core.financial_entries(iclips_id bigint PRIMARY KEY,parent_id bigint,entry_type text,amount numeric,payment_date date,category_id bigint,job_id bigint,account_id bigint);
+    INSERT INTO core.financial_entries VALUES(1,NULL,'Entrada',100,'2026-01-10',1,1,1),(2,NULL,'Saída',40,'2026-01-11',2,1,1);
+    CREATE TABLE core.financial_categories(iclips_id bigint,name text,dre_indicator text);
+    INSERT INTO core.financial_categories VALUES(1,'Receita fixture','RECEITAS OPERACIONAIS'),(2,'Despesa fixture','DESPESAS OPERACIONAIS CUSTO FIXO');
+    CREATE TABLE core.financial_accounts(iclips_id bigint,name text);INSERT INTO core.financial_accounts VALUES(1,'Conta fixture');`);
   // Substitui apenas o transporte pg por PostgreSQL embarcado de testes; nenhuma rede é usada.
   mock.method(pg.Pool.prototype, "query", async (sql: any, params: any) => engine.query(sql, params));
   process.env.DATABASE_URL = "postgres://fixture_ro@127.0.0.1:1/quest_rinne";
@@ -27,6 +36,16 @@ before(async () => {
 });
 after(async () => { await closePool(); srv.stop(); await engine.close(); mock.restoreAll(); });
 const period = "start=2026-01-01&end=2026-01-31";
+test('fase 2: dados financeiros e razões livres não vazam e escopo não é ampliado',async()=>{
+  await createUser('analista.phase2','analista');const analyst=new Client(srv.base);await analyst.login('analista.phase2');
+  for(const path of ['/api/tables/faturamento_por_cliente','/api/tables/dre_contas','/api/tables/notas_vinculos','/api/tables/conflitos_detalhes','/api/indicators/receitas_nao_operacionais','/api/indicators/horas_sem_custo_positivo'])assert.equal((await analyst.req(`${path}?${period}`)).status,403,path);
+  for(const id of ['dre_contas','faturamento_por_cliente','notas_vinculos']) {
+    const r=await restricted.req(`/api/tables/${id}?${period}&department=B`);assert.equal(r.body.status,'INSUFFICIENT_DATA');assert.deepEqual(r.body.rows,[]);
+  }
+  const rows=await admin.req(`/api/tables/clientes?${period}`);assert.equal(Number(rows.body.rows.find((r:any)=>Number(r.id)===10).faturado),100);
+  const scoped=await restricted.req(`/api/tables/clientes?${period}`);assert.ok(scoped.body.rows.every((r:any)=>r.faturado==null));
+  const note=await admin.req(`/api/tables/notas_fiscais?${period}`);assert.equal(note.body.rows.find((r:any)=>Number(r.id)===1).cliente,'Cliente Aurora');
+});
 test('custos novos são removidos de linhas, colunas, relatórios e gráficos operacionais',async()=>{
   const rows=await restricted.req(`/api/tables/colaboradores?${period}`);
   assert.ok(!rows.body.columns.includes('custo_registrado'));
@@ -76,7 +95,8 @@ test("relatório financeiro usa PostgreSQL e mantém faturamento separado de cai
   const r = await admin.req(`/api/reports/financeiro?${period}&format=json`);
   assert.equal(r.status, 200);
   assert.equal(r.body.indicators.find((i: any) => i.id === "receita_faturada").value, 90);
-  assert.equal(r.body.indicators.find((i: any) => i.id === "receita_recebida").value, null);
+  assert.equal(r.body.indicators.find((i: any) => i.id === "receita_recebida").value, 100);
+  assert.equal(r.body.indicators.find((i:any)=>i.id==='resultado_operacional').value,60);
   for (const format of ["csv", "xlsx", "md"]) assert.equal((await admin.req(`/api/reports/financeiro?${period}&format=${format}`)).status, 200);
 });
 test("cookie em /core/ é emitido e apagado pelo backend mantendo os atributos", async () => {
