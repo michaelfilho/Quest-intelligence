@@ -5,7 +5,7 @@
 | dado | onde | responsável |
 |---|---|---|
 | Banco analítico `quest_rinne` | PostgreSQL existente | **fora do RINNE** (rotina atual da infraestrutura). O RINNE só lê |
-| Banco da aplicação (usuários, perfis, sessões, auditoria, conversas, reuniões, configurações) | `deploy/data/app.db` (volume) | `deploy/backup.sh` |
+| Banco da aplicação (usuários, perfis, sessões, auditoria, configurações) | `deploy/data/app.db` (volume) | `deploy/backup.sh` |
 | Allowlist de IPs | `deploy/data/ip-allowlist.json` | `deploy/backup.sh` |
 | Configuração | `deploy/.env.production`, `deploy/htpasswd` | cópia manual segura (contêm segredos; nunca no git) |
 
@@ -41,7 +41,7 @@ docker compose -f docker-compose.prod.yml --env-file deploy/.env.production star
 
 2. **Para voltar:** `git checkout <commit-anterior>` e `docker compose … up -d --build`.
 
-3. **Migrations:** as migrations do SQLite (`server/migrations`) são **aditivas**. Uma versão anterior do código ignora tabelas novas. Se uma migration futura alterar estrutura existente, restaure o backup feito **antes** do deploy.
+3. **Migrations:** a 003 limpa apenas permissões descontinuadas, preservando tabelas e configurações históricas. Para voltar ao código com IA, restaure também os perfis a partir do backup anterior. Bancos onde a revisão destrutiva anterior da 003 já foi executada precisam de backup anterior para recuperar eventuais históricos excluídos.
 
 4. **O banco analítico não é afetado** por rollback do RINNE.
 

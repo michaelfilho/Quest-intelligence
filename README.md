@@ -1,70 +1,37 @@
 # QUEST RINNE 1.0
 
-Plataforma de inteligência econômica e operacional da Quest Comunicação.
-Lê o PostgreSQL `quest_rinne` (schemas `core`, `ingest`, `audit`) **somente para leitura** e apresenta indicadores rastreáveis.
+Plataforma de inteligência econômica, financeira e operacional da Quest Comunicação. Lê o PostgreSQL `quest_rinne` (schemas `core`, `ingest`, `audit`) **somente para leitura** e apresenta indicadores rastreáveis, calculados de forma determinística.
 
-> Estado atual: aplicação completa rodando localmente **sem banco**. Todos os indicadores aparecem como
-> `DATABASE_UNAVAILABLE` ou "aguardando mapeamento". Nenhum valor é simulado. Veja [docs/DEPLOY.md](docs/DEPLOY_VPS.md) para conectar ao banco real.
+> **Estado:** a aplicação roda por completo localmente **sem o banco**. Os indicadores aparecem como "Sem conexão com o banco" ou "Aguardando mapeamento", nunca como zero nem com valores simulados. Os cálculos SQL dependem da inspeção do schema real na etapa de deploy ([docs/INTEGRACAO_POSTGRESQL.md](docs/INTEGRACAO_POSTGRESQL.md)).
 
-## Requisitos
+**Módulos:** Visão geral · Clientes · Projetos / Jobs · Rentabilidade · Financeiro · Timesheet · Departamentos · Colaboradores · Produtividade · Produção · Contratos · Capacidade operacional · Eficiência · Contratado × executado · Qualidade dos dados · Relatórios (PDF, CSV, XLSX, Markdown) · Configurações (usuários, perfis, IP, sessões, auditoria, segurança).
 
-- Node.js 22.12+ (testado com 24.19)
-- Docker é opcional (só para o empacotamento)
-
-## Instalação
-
-```bash
-npm run setup                 # instala server/ e web/
-cp .env.example .env          # opcional; sem .env a API sobe como "banco não configurado"
-```
-
-> O `.env` do projeto prevalece sobre as variáveis da máquina. Nesta máquina existe uma `DATABASE_URL` em nível de usuário
-> que pertence a outro projeto. A API a recusa, porque só aceita `postgres://…/quest_rinne` e não aceita o usuário `postgres`.
+**Fora do escopo da 1.0** (evolução futura): IA, voz e Modo reunião. O código ficou arquivado na branch `archive/ia-voz-reuniao`.
 
 ## Executar localmente
 
-Use dois terminais:
-
 ```bash
-npm run dev:api               # API   → http://127.0.0.1:3333/api/health
-npm run dev:web               # Web   → http://localhost:5173
+npm run setup                                              # instala as dependências
+npm --prefix server run user:admin -- <usuario> "Nome"     # cria o administrador (senha temporária exibida uma vez)
+npm run dev:api                                            # terminal 1 → http://127.0.0.1:3333
+npm run dev:web                                            # terminal 2 → http://localhost:5173
 ```
 
-Abra **http://localhost:5173**. O Vite encaminha `/api` para a API.
+Verificações: `npm run typecheck` · `npm test` · `npm run build` · `npm run homologacao` (homologação visual).
 
-**Primeiro acesso:** crie o administrador (a senha temporária aparece uma única vez no terminal e a troca é obrigatória no primeiro login):
+## Arquitetura
 
-```bash
-npm --prefix server run user:admin -- <usuario> "Nome Completo"
-```
-
-Os demais usuários são criados na tela **Configurações → Usuários**. Os dados de login, perfis, sessões, auditoria e configurações ficam em `server/data/app.db`, isolado do PostgreSQL analítico.
-
-Com Docker (simula a produção: nginx + API):
-
-```bash
-docker compose up --build     # → http://localhost:8080
-```
-
-## Build e testes
-
-```bash
-npm run typecheck             # TypeScript (server + web)
-npm test                      # node:test (API) + vitest (web)
-npm run build                 # typecheck da API + build de produção do web (web/dist)
-```
-
-## Estrutura
+React + TypeScript (frontend) · Node + Express + TypeScript (backend) · PostgreSQL (dados analíticos, somente leitura) · SQLite (usuários, perfis, sessões, auditoria, configurações) · n8n (sincronização do iClips com o PostgreSQL, fora desta aplicação).
 
 ```
-shared/        contratos de dados e catálogo de módulos/indicadores (fonte única, usada pela API e pelo web)
-server/src/    API Express: app.ts (rotas) · auth.ts/authz.ts/admin.ts (login, permissões, administração) · access.ts (IP) · store.ts (app.db) · db.ts (PostgreSQL RO) · services.ts · mappings.ts (SQL real, a preencher) · rinne.ts
-server/migrations/  migrations do banco da aplicação (SQLite)
-server/test/   testes da API sem banco
-web/src/       React + Vite + Tailwind + TanStack Query + Recharts
-sql/           scripts manuais (role somente leitura) — nunca executados automaticamente
-deploy/        exemplo de configuração de produção
-docs/          diagnóstico, arquitetura, deploy, dicionários
+shared/   catálogo de módulos/indicadores, contratos e permissões (fonte única)
+server/   API: rotas, autenticação, permissões, relatórios, PostgreSQL RO, SQLite (+ migrations e testes)
+web/      interface (Vite, Tailwind, TanStack Query, Recharts) + nginx
+e2e/      homologação visual (Playwright + Edge)
+deploy/   exemplos de configuração e backup · docker-compose*.yml · sql/ (role somente leitura)
+docs/     documentação
 ```
 
-Documentação: [segurança e deploy seguro](docs/SEGURANCA.md) · [arquitetura e APIs](docs/ARQUITETURA.md) · [deploy na VPS](docs/DEPLOY_VPS.md) · [dicionário de indicadores](docs/DICIONARIO_INDICADORES.md) · [diagnóstico da fase 1](docs/DIAGNOSTICO_FASE1.md)
+## Documentação
+
+[Instalação local](docs/INSTALACAO_LOCAL.md) · [Arquitetura](docs/ARQUITETURA.md) · [Segurança](docs/SEGURANCA.md) · [API](docs/API.md) · [Integração PostgreSQL](docs/INTEGRACAO_POSTGRESQL.md) · [Dicionário de indicadores](docs/DICIONARIO_INDICADORES.md) · [Testes](docs/TESTES.md) · [Homologação local](docs/HOMOLOGACAO_LOCAL.md) · [Deploy na VPS](docs/DEPLOY_VPS.md) · [Backup e rollback](docs/BACKUP_ROLLBACK.md) · [Pendências de produção](docs/PENDENCIAS_PRODUCAO.md)

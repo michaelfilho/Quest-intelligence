@@ -105,25 +105,6 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-/** Usuário ativo carregado do banco (permissões sempre recalculadas). Usado pelas ferramentas do n8n. */
-export function loadUser(userId: number): SessionUser | null {
-  const row = store()
-    .prepare("SELECT u.id, u.username, u.name, u.active, u.must_change_password, u.grants, u.denies, u.scope_department, r.id role_id, r.name role_name, r.permissions FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = ?")
-    .get(userId);
-  if (!row || !row.active || row.must_change_password) return null;
-  return {
-    id: Number(row.id),
-    username: String(row.username),
-    name: String(row.name),
-    roleId: row.role_id ? String(row.role_id) : null,
-    roleName: row.role_name ? String(row.role_name) : null,
-    permissions: effectivePermissions(row.permissions, row.grants, row.denies),
-    scopeDepartment: row.scope_department ? String(row.scope_department) : null,
-    mustChangePassword: false,
-    sessionId: "",
-  };
-}
-
 /** Exige sessão válida. Com troca de senha pendente, só /api/auth/* fica liberado. */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.user) return res.status(401).json({ error: "Sessão inválida ou expirada. Entre novamente.", code: "UNAUTHENTICATED" });

@@ -13,3 +13,13 @@ backup
 server/data
 e2e
 scripts
+.git
+deploy/data
+backups
+*.db
+*.db-*
+*.sqlite*
+*.pem
+*.key
+id_rsa*
+id_ed25519*

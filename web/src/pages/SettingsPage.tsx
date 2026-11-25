@@ -1,10 +1,10 @@
-import { Archive, Bot, Database, Mic, Globe, History, Info, Lock, MonitorSmartphone, Plug, Ruler, Settings, Shield, ShieldCheck, SlidersHorizontal, Users, Workflow, type LucideIcon } from "lucide-react";
+import { Database, Globe, History, Info, Lock, MonitorSmartphone, Plug, Ruler, Settings, Shield, ShieldCheck, SlidersHorizontal, Users, Workflow, type LucideIcon } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import type { Permission } from "../../../shared/permissions";
 import { PageHeader, Panel } from "../components/ui";
 import { DB_LABEL, useCan, useHealth } from "../lib";
 import { AccessPanel } from "./AccessPanel";
-import { AllSessionsSection, AuditSection, GeneralSection, RetentionSection, RinneIntelligenceSection, SecuritySection, useSettings, VoiceSection } from "./AdminActivity";
+import { AllSessionsSection, AuditSection, GeneralSection, SecuritySection } from "./AdminActivity";
 import { RolesSection, UsersSection } from "./AdminUsers";
 import { ConnectionPanel } from "./ConnectionPanel";
 import { NoAccess } from "./ModulePage";
@@ -21,12 +21,10 @@ const METHOD = [
 
 function Integrations() {
   const health = useHealth();
-  const n8n = useSettings().data?.environment.n8n;
   const db = health.data?.database;
   const items = [
     { icon: Database, name: "PostgreSQL quest_rinne", tag: "SOMENTE LEITURA", desc: "Fonte oficial. Schemas core (consumo), ingest (coletas) e audit (conflitos).", status: health.isError ? "API inacessível" : db ? DB_LABEL[db] : "Verificando…", ok: db === "CONNECTED" },
     { icon: Workflow, name: "iClips API → n8n (QPF-00)", tag: "INGESTÃO", desc: "Sincronização externa gerenciada pelo n8n. Esta aplicação apenas lê o resultado e nunca altera workflows.", status: "Gerenciado fora da aplicação", ok: false },
-    { icon: Bot, name: "n8n — orquestração da RINNE", tag: "IA", desc: "Agentes, modelos, prompts, memória, tokens e custos ficam no n8n. A aplicação só troca mensagens assinadas e expõe ferramentas autorizadas.", status: n8n ? (n8n.enabled ? "Disponível" : "Indisponível") : "—", ok: !!n8n?.enabled },
     { icon: Database, name: "Banco da aplicação (SQLite)", tag: "PERSISTENTE", desc: "Usuários, perfis, sessões, auditoria e configurações. Isolado do banco analítico; volume server/data.", status: "Ativo", ok: true },
   ];
   return (
@@ -76,9 +74,6 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon; perm: Permission;
   { id: "seguranca", label: "Segurança", icon: Shield, perm: "config.view", render: () => <SecuritySection /> },
   { id: "integracoes", label: "Integrações", icon: Globe, perm: "config.view", render: () => <Integrations /> },
   { id: "banco", label: "Banco de dados", icon: Database, perm: "config.view", render: () => <ConnectionPanel /> },
-  { id: "ia", label: "Inteligência RINNE", icon: Bot, perm: "config.view", render: () => <RinneIntelligenceSection /> },
-  { id: "voz", label: "Voz", icon: Mic, perm: "config.view", render: () => <VoiceSection /> },
-  { id: "retencao", label: "Retenção de reuniões", icon: Archive, perm: "config.view", render: () => <RetentionSection /> },
   { id: "gerais", label: "Configurações gerais", icon: SlidersHorizontal, perm: "config.view", render: () => <General /> },
 ];
 

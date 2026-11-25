@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Bot, History, Mic, Save, Shield, SlidersHorizontal } from "lucide-react";
+import { History, Save, Shield, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Panel } from "../components/ui";
 import { api, fmt, send, useCan } from "../lib";
@@ -111,7 +111,7 @@ export function AuditSection() {
 type Settings = Record<string, string | number | boolean>;
 export interface SettingsResponse {
   settings: Settings;
-  environment: { database: string; schemas: Record<string, string>; n8n: { enabled: boolean; problem: string | null }; trustProxy: string; requireProxy: boolean; cookieSecure: boolean; node: string; dataDir: string };
+  environment: { database: string; schemas: Record<string, string>; trustProxy: string; requireProxy: boolean; cookieSecure: boolean; node: string; dataDir: string };
 }
 export const useSettings = () => useQuery({ queryKey: ["admin-settings"], queryFn: () => api<SettingsResponse>("/admin/settings") });
 
@@ -159,7 +159,7 @@ function SettingsForm({ title, icon, subtitle, fields, children }: { title: stri
             }
           }} className="flex h-10 items-center gap-2 rounded-lg bg-q-orange px-5 text-sm font-semibold text-white disabled:opacity-50"><Save size={15} /> Salvar</button>
         ) : (
-          <p className="text-xs text-q-mid">Somente leitura para o seu perfil (requer "Alterar configurações gerais, segurança e IA").</p>
+          <p className="text-xs text-q-mid">Somente leitura para o seu perfil (requer "Alterar configurações gerais, segurança").</p>
         )}
       </div>
     </Panel>
@@ -184,124 +184,6 @@ export function SecuritySection() {
         </dl>
       )}
     </SettingsForm>
-  );
-}
-
-interface N8nInfo {
-  status: { enabled: boolean; configured: boolean; problem: string | null; transport: string | null; timeoutMs: number; maxConcurrency: number; avgLatencyMs: number | null; inFlight: number; lastSuccess: { request_id: string; operation: string; created_at: string; latency_ms: number } | null; lastFailure: { request_id: string; operation: string; status: string; created_at: string; error: string } | null };
-  history: { request_id: string; correlation_id: string; session_id: string | null; mode: string; operation: string; status: string; http_status: number | null; latency_ms: number | null; error: string | null; created_at: string }[];
-}
-
-/** Inteligência RINNE: toda IA (modelos, prompts, tokens, custos) é configurada no n8n — aqui só status e rastreio. */
-export function RinneIntelligenceSection() {
-  const can = useCan();
-  const q = useQuery({ queryKey: ["n8n-status"], queryFn: () => api<N8nInfo>("/admin/integrations/n8n") });
-  const [test, setTest] = useState<{ status: string; requestId: string; latencyMs: number | null; error: string | null } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const s = q.data?.status;
-  const rows: [string, string][] = s
-    ? [
-        ["Integração", s.enabled ? "Disponível" : "Indisponível"],
-        ["Configuração", s.configured ? "URL e segredo definidos no backend" : "Não configurada (variáveis RINNE_N8N_*)"],
-        ["Transporte", s.transport ?? "—"],
-        ["Última comunicação bem-sucedida", s.lastSuccess ? `${fmt(s.lastSuccess.created_at, "datetime")} · ${s.lastSuccess.operation} · ${s.lastSuccess.latency_ms} ms` : "Nenhuma"],
-        ["Última falha", s.lastFailure ? `${fmt(s.lastFailure.created_at, "datetime")} · ${s.lastFailure.status}: ${s.lastFailure.error}` : "Nenhuma"],
-        ["Tempo médio de resposta", s.avgLatencyMs == null ? "—" : `${s.avgLatencyMs} ms (últimas 20)`],
-        ["Timeout", `${s.timeoutMs / 1000} s`],
-        ["Concorrência máxima", String(s.maxConcurrency)],
-        ["Em andamento", String(s.inFlight)],
-      ]
-    : [];
-  return (
-    <Panel title="Inteligência RINNE (n8n)" subtitle={<><Bot size={13} className="text-q-orange" /> Modelos, prompts, memória, tokens, custos e fallback ficam exclusivamente nos workflows do n8n.</>}>
-      <div className="space-y-4 border-t border-q-line px-6 py-5">
-        {rows.length > 0 && (
-          <dl className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
-            {rows.map(([k, v]) => <div key={k} className="rounded-lg bg-q-bg px-3 py-2"><dt className="text-[11px] text-q-mid">{k}</dt><dd className="font-semibold">{v}</dd></div>)}
-          </dl>
-        )}
-        {s?.problem && <Notice kind="err">{s.problem}</Notice>}
-        {can("config.manage") && (
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  setTest((await send<NonNullable<typeof test>>("POST", "/admin/integrations/n8n/test"))!);
-                  q.refetch();
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              className="flex h-10 items-center gap-2 rounded-lg bg-q-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              Testar conectividade
-            </button>
-            <span className="text-xs text-q-mid">Envia a operação PING, que o workflow responde sem acionar modelos (sem custo).</span>
-            {test && (
-              <span className={`rounded px-2 py-1 text-xs font-bold text-white ${test.status === "success" ? "bg-q-ink" : "bg-q-orange"}`}>
-                {test.status}
-                {test.latencyMs != null ? ` · ${test.latencyMs} ms` : ""}
-                {test.error ? ` · ${test.error}` : ""} · #{test.requestId.slice(0, 8)}
-              </span>
-            )}
-          </div>
-        )}
-        <div className="overflow-x-auto rounded-xl border border-q-line">
-          <table className="w-full min-w-max text-xs">
-            <thead>
-              <tr className="border-b border-q-line text-left font-semibold uppercase tracking-wide text-q-graphite">
-                <th className="px-3 py-2">Data</th><th className="px-3 py-2">Modo</th><th className="px-3 py-2">Operação</th><th className="px-3 py-2">Situação</th><th className="px-3 py-2 text-right">Latência</th><th className="px-3 py-2">requestId</th><th className="px-3 py-2">correlationId</th><th className="px-3 py-2">Erro</th>
-              </tr>
-            </thead>
-            <tbody>
-              {q.data?.history.map((h) => (
-                <tr key={h.request_id} className="border-b border-q-line/60">
-                  <td className="whitespace-nowrap px-3 py-1.5">{fmt(h.created_at, "datetime")}</td>
-                  <td className="px-3 py-1.5">{h.mode}</td>
-                  <td className="px-3 py-1.5">{h.operation}</td>
-                  <td className="px-3 py-1.5"><span className={`rounded px-1.5 py-0.5 font-bold uppercase ${h.status === "success" ? "bg-q-bg" : "bg-q-orange text-white"}`}>{h.status}</span></td>
-                  <td className="num px-3 py-1.5 text-right">{h.latency_ms == null ? "—" : `${h.latency_ms} ms`}</td>
-                  <td className="px-3 py-1.5 font-mono">{h.request_id.slice(0, 8)}</td>
-                  <td className="px-3 py-1.5 font-mono">{h.correlation_id.slice(0, 8)}</td>
-                  <td className="max-w-xs truncate px-3 py-1.5" title={h.error ?? ""}>{h.error ?? "—"}</td>
-                </tr>
-              ))}
-              {q.data && !q.data.history.length && <tr><td colSpan={8} className="px-3 py-4 text-center text-q-mid">Nenhuma solicitação registrada.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-[11px] text-q-mid">A URL privada e o segredo do webhook nunca são exibidos. Não há campos para chaves de provedores, modelos, prompts, temperatura ou orçamento de tokens — isso pertence ao n8n.</p>
-      </div>
-    </Panel>
-  );
-}
-
-export function VoiceSection() {
-  return (
-    <SettingsForm
-      title="Voz"
-      icon={<Mic size={13} className="text-q-orange" />}
-      subtitle="RINNE Voz e Modo reunião."
-      fields={[{ key: "rinne.browser_tts", label: "Permitir voz nativa do navegador como alternativa", type: "bool", help: "Usada só quando o n8n não devolver áudio. Depende do sistema/navegador (pode não ser offline). Preferência: voz masculina pt-BR, grave e firme." }]}
-    >
-      <p className="text-xs text-q-mid">Reconhecimento e síntese inteligentes de voz são configurados nos workflows do n8n. O áudio é enviado em segmentos de até 30 s / 2 MB, somente com consentimento, e não é armazenado.</p>
-    </SettingsForm>
-  );
-}
-
-export function RetentionSection() {
-  return (
-    <SettingsForm
-      title="Retenção"
-      icon={<History size={13} className="text-q-orange" />}
-      subtitle="Prazo de guarda dos dados internos da aplicação (aplicado na inicialização)."
-      fields={[
-        { key: "rinne.history_retention_days", label: "Conversas da RINNE (dias)", type: "number", min: 7, max: 3650 },
-        { key: "meetings.retention_days", label: "Reuniões e seus registros (dias)", type: "number", min: 7, max: 3650 },
-      ]}
-    />
   );
 }
 

@@ -166,8 +166,3 @@ export function accessRouter() {
   });
   return r;
 }
-
-/** IP dentro de uma lista "a.b.c.d,rede/24,..." (usado para restringir a origem das chamadas internas do n8n). */
-export function ipInList(listCsv: string, ip: string) {
-  return check(buildList(listCsv.split(",").map((s) => s.trim()).filter(Boolean)), ip);
-}

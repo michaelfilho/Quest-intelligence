@@ -1,5 +1,5 @@
 // Central de relatórios: cálculo e documento por código tradicional (determinístico).
-// Conclusões inteligentes: SÓ via n8n, sob demanda e somente quando há dados reais (nunca para "preencher" vazio).
+// Todos os cálculos, filtros e documentos são determinísticos.
 import express, { type Request, type Response } from "express";
 import { INDICATORS, moduleById, TABLES } from "../../shared/catalog.js";
 import type { Filters, Unit } from "../../shared/contracts.js";
@@ -9,9 +9,8 @@ import type { SessionUser } from "./auth.js";
 import { allowedColumns, chartAllowed, indicatorAllowed, moduleAllowed, scopeFilters, stripRows, tableAllowed } from "./authz.js";
 import { dbState } from "./db.js";
 import { filtersSchema } from "./filters.js";
-import { callN8n } from "./integrations/n8n.js";
 import { resolveModule, resolveTable } from "./services.js";
-import { audit, store } from "./store.js";
+import { audit } from "./store.js";
 import { xlsx, type Cell } from "./xlsx.js";
 
 export interface ReportDef {
@@ -35,7 +34,6 @@ export const REPORT_DEFS: ReportDef[] = [
   { id: "eficiencia", title: "Relatório de eficiência", description: "Produtividade, tempos, atrasos, refações e desvios.", module: "produtividade", indicators: ["produtividade", "tempo_medio_atividade", "projetos_atrasados", "horas_retrabalho", "desvio_horas", "horas_previstas", "horas_registradas"], requires: ["capacidade.view"] },
   { id: "capacidade", title: "Relatório de capacidade", description: "Capacidade, ocupação e distribuição da carga.", module: "produtividade", indicators: ["capacidade_disponivel", "horas_registradas", "horas_produtivas", "horas_improdutivas", "ocupacao"], tables: ["capacidade_colaboradores"], requires: ["capacidade.view"] },
   { id: "qualidade", title: "Relatório de qualidade dos dados", description: "Sincronização, pendências, conflitos e cobertura.", module: "qualidade", tables: ["conflitos", "tarefas_ingest", "periodos_incompletos"], requires: ["qualidade.view"] },
-  { id: "reunioes", title: "Relatório de reuniões", description: "Reuniões realizadas, departamentos analisados, decisões e encaminhamentos.", requires: ["reuniao.use"] },
 ];
 
 export const reportAllowed = (u: SessionUser, d: ReportDef) => u.permissions.has("relatorios.view") && d.requires.every((p) => u.permissions.has(p)) && (!d.module || moduleAllowed(u, moduleById(d.module)!));
@@ -63,17 +61,11 @@ export function csvCell(v: unknown) {
   return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-export async function buildReport(u: SessionUser, d: ReportDef, f: Filters, wantConclusions: boolean) {
+export async function buildReport(u: SessionUser, d: ReportDef, f: Filters) {
   const { state } = await dbState();
   const base = { id: d.id, title: d.title, description: d.description, period: { start: f.start, end: f.end }, previousPeriod: f.compare ? previousPeriod(f.start, f.end) : null, generatedAt: new Date().toISOString(), generatedBy: u.name, filters: Object.fromEntries(Object.entries(f).filter(([k, v]) => v && !["start", "end"].includes(k))), database: state };
   const indicators: Record<string, unknown>[] = [];
   const tables: Record<string, unknown>[] = [];
-
-  if (d.id === "reunioes") {
-    const rows = store().prepare("SELECT m.title, m.state, m.started_at, m.completed_at, (SELECT count(*) FROM meeting_departments x WHERE x.meeting_id = m.id) deps, (SELECT count(*) FROM meeting_items i WHERE i.meeting_id = m.id AND i.kind = 'decision') decisions, (SELECT count(*) FROM meeting_items i WHERE i.meeting_id = m.id AND i.kind = 'action') actions FROM meetings m WHERE m.user_id = ? AND substr(m.started_at, 1, 10) BETWEEN ? AND ? ORDER BY m.started_at DESC LIMIT 1000").all(u.id, f.start, f.end);
-    tables.push({ id: "reunioes", label: "Reuniões no período", columns: [{ key: "title", label: "Reunião", type: "text" }, { key: "state", label: "Situação", type: "text" }, { key: "started_at", label: "Início", type: "datetime" }, { key: "completed_at", label: "Encerramento", type: "datetime" }, { key: "deps", label: "Departamentos", type: "count" }, { key: "decisions", label: "Decisões", type: "count" }, { key: "actions", label: "Encaminhamentos", type: "count" }], rows, total: rows.length, status: "OK" });
-    return { ...base, dataAvailable: rows.length > 0, indicators, tables, limitations: ["Inclui apenas as reuniões do próprio usuário (dados da aplicação, não do banco analítico).", "Análises por IA aparecem somente quando a integração com o n8n estiver ativa."], conclusions: { status: "not_applicable", text: null, requestId: null } };
-  }
 
   const m = moduleById(d.module!)!;
   const r = await resolveModule(m, f, { indicator: (x) => indicatorAllowed(u, x) && (!d.indicators || d.indicators.includes(x)), chart: (x) => chartAllowed(u, x) });
@@ -96,16 +88,7 @@ export async function buildReport(u: SessionUser, d: ReportDef, f: Filters, want
     "Ausência de informação não equivale a zero. Bases temporais (faturamento, caixa, competência) não são somadas entre si.",
   ];
 
-  let conclusions: { status: string; text: string | null; requestId: string | null; error?: string | null } = { status: "not_requested", text: null, requestId: null };
-  if (wantConclusions) {
-    if (!dataAvailable) conclusions = { status: "skipped", text: null, requestId: null, error: "Sem dados reais calculados, não há conclusões a gerar." };
-    else {
-      const ok = indicators.filter((i) => i.status === "OK").map((i) => ({ id: i.id, label: i.label, value: i.value, previous: i.previous, unit: i.unit, reliability: i.reliability }));
-      const c = await callN8n({ user: u, mode: "CHAT", operation: "ANALYZE", sessionId: null, message: `Conclusões gerenciais do ${d.title.toLowerCase()}`, period: { from: f.start, to: f.end }, departmentId: f.department ?? null, data: { report: d.id, indicators: ok } });
-      conclusions = { status: c.status === "success" ? "done" : c.status, text: c.body?.text ?? null, requestId: c.requestId, error: c.error };
-    }
-  }
-  return { ...base, dataAvailable, indicators, tables, limitations, conclusions };
+  return { ...base, dataAvailable, indicators, tables, limitations };
 }
 
 type Report = Awaited<ReturnType<typeof buildReport>>;
@@ -138,7 +121,7 @@ export function toCsv(r: Report) {
 
 export function toXlsx(r: Report) {
   return xlsx([
-    { name: "Resumo", rows: [...header(r), [], ["Limitações"], ...r.limitations.map((l) => [l]), [], ["Conclusões"], [r.conclusions.text ?? "Conclusões inteligentes não geradas (dependem do n8n e de dados reais)."]] },
+    { name: "Resumo", rows: [...header(r), [], ["Limitações"], ...r.limitations.map((l) => [l])] },
     { name: "Indicadores", rows: [IND_HEAD, ...r.indicators.map(indRow)] },
     ...r.tables.map((t) => {
       const cols = t.columns as Col[];
@@ -161,7 +144,7 @@ export function toMarkdown(r: Report) {
     if (!(t.rows as unknown[]).length) L.push(t.status === "OK" ? "Nenhum registro no período." : `Indisponível (${t.status}).`, "");
     else L.push(`| ${cols.map((c) => c.label).join(" | ")} |`, `|${cols.map(() => "---").join("|")}|`, ...(t.rows as Record<string, unknown>[]).map((row) => `| ${cols.map((c) => String(fmtValue(row[c.key], c.type)).replace(/\|/g, "\\|")).join(" | ")} |`), "");
   }
-  L.push("## Conclusões", "", r.conclusions.status === "done" && r.conclusions.text ? `${r.conclusions.text}\n\n_Conclusões geradas pela RINNE (n8n); os números acima foram calculados pelo sistema._` : "Conclusões inteligentes não geradas (dependem da integração com o n8n e de dados reais).", "", "## Limitações", "", ...r.limitations.map((l) => `- ${l}`));
+  L.push("## Limitações", "", ...r.limitations.map((l) => `- ${l}`));
   return L.join("\n");
 }
 
@@ -176,11 +159,11 @@ export function reportsRouter() {
     const format = String(req.query.format ?? "json");
     if (!["json", "csv", "xlsx", "md"].includes(format)) return res.status(400).json({ error: "Formato inválido (json, csv, xlsx, md)." });
     if (format !== "json" && !req.user!.permissions.has("relatorios.export")) return res.status(403).json({ error: "Você não tem permissão para exportar relatórios." });
-    const { format: _f, conclusions: _c, ...q } = req.query;
+    const { format: _f, ...q } = req.query;
     const p = filtersSchema.safeParse(q);
     if (!p.success) return res.status(400).json({ error: "Filtros inválidos" });
     try {
-      const rep = await buildReport(req.user!, d, scopeFilters(req.user!, p.data), req.query.conclusions === "1");
+      const rep = await buildReport(req.user!, d, scopeFilters(req.user!, p.data));
       if (format === "json") return res.json(rep);
       audit({ event: "report.export", actorId: req.user!.id, actor: req.user!.username, target: d.id, details: { format, dataAvailable: rep.dataAvailable } });
       const name = `rinne_${d.id}_${rep.period.start}_${rep.period.end}`;

@@ -1,7 +1,7 @@
-import { Bot, Briefcase, Building2, Clock, Factory, FileText, LayoutGrid, Layers, Mic, Presentation, Scale, Settings, ShieldCheck, TrendingUp, Users, Wallet, Zap, type LucideIcon } from "lucide-react";
+import { Briefcase, Building2, Clock, Factory, FileText, LayoutGrid, Layers, Scale, Settings, ShieldCheck, TrendingUp, Users, Wallet, Zap, type LucideIcon } from "lucide-react";
 import { MODULES } from "../../shared/catalog";
 import { monthPeriod, todaySP } from "../../shared/contracts";
-import { MIC_ROUTES, MODULE_PERMISSION, type Permission } from "../../shared/permissions";
+import { MODULE_PERMISSION, type Permission } from "../../shared/permissions";
 
 export const MODULE_ICON: Record<string, LucideIcon> = {
   executivo: LayoutGrid,
@@ -17,6 +17,9 @@ export const MODULE_ICON: Record<string, LucideIcon> = {
   produtividade: Zap,
   producao: Factory,
   contratado: Scale,
+  contratos: Briefcase,
+  capacidade: Clock,
+  eficiencia: Zap,
   qualidade: ShieldCheck,
 };
 
@@ -38,18 +41,12 @@ const modules: NavItem[] = MODULES.filter((m) => !m.detailOf).map((m) => ({ id: 
 export const NAV: NavItem[] = [
   ...modules.filter((m) => m.group !== "Governança"),
   { id: "relatorios", path: "/relatorios", label: "Relatórios", group: "Análises", icon: FileText, question: "Relatórios gerenciais com exportação CSV (Excel pt-BR).", anyOf: ["relatorios.view"] },
-  { id: "rinne", path: "/rinne", label: "RINNE IA", group: "RINNE", icon: Bot, question: "Perguntas sobre os indicadores, com origem dos números.", anyOf: ["rinne_ia.use"] },
-  { id: "voz", path: "/rinne/voz", label: "RINNE Voz", group: "RINNE", icon: Mic, question: "Interação por voz (microfone só com o seu consentimento).", anyOf: ["rinne_voz.use"] },
-  { id: "reuniao", path: "/reuniao", label: "Modo reunião", group: "RINNE", icon: Presentation, question: "Análises departamentais durante reuniões e relatório da reunião.", anyOf: ["reuniao.use"] },
   ...modules.filter((m) => m.group === "Governança"),
   { id: "configuracoes", path: "/configuracoes", label: "Configurações", group: "Governança", icon: Settings, question: "Usuários, perfis, acesso, sessões, auditoria e integrações.", anyOf: ["config.view", "usuarios.manage", "perfis.manage", "ip.manage", "sessoes.manage", "auditoria.view"] },
 ];
 
 /** Itens de menu liberados para um conjunto de permissões (o backend aplica de verdade). */
 export const navFor = (perms: ReadonlySet<string>) => NAV.filter((n) => n.anyOf.some((p) => perms.has(p)));
-
-/** Rotas com microfone têm Permissions-Policy própria: entrar e sair delas recarrega o documento. */
-export const isMicRoute = (path: string) => MIC_ROUTES.some((r) => path === r || path.startsWith(r + "/"));
 
 export function periodPresets() {
   const t = todaySP();

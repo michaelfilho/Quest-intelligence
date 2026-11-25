@@ -65,10 +65,6 @@ export const SETTING_DEFAULTS = {
   "security.password_min_length": 12,
   "general.organization": "Quest Comunicação",
   "general.default_period": "Mês atual",
-  // RINNE: toda IA é orquestrada no n8n (URL/segredo só em variáveis de ambiente). Aqui ficam só preferências da aplicação.
-  "rinne.browser_tts": true, // permite síntese de voz nativa do navegador como alternativa local
-  "rinne.history_retention_days": 365,
-  "meetings.retention_days": 365,
 } as const;
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 
@@ -110,13 +106,8 @@ export function audit(e: AuditEvent) {
 
 const daysAgo = (d: number) => new Date(Date.now() - d * 86400000).toISOString();
 
-/** Retenção: auditoria (AUDIT_RETENTION_DAYS), conversas, reuniões, nonces e contextos expirados. */
+/** Retenção: remove eventos de auditoria mais antigos que AUDIT_RETENTION_DAYS (padrão 365). */
 export function pruneAudit() {
   const d = store();
   d.prepare("DELETE FROM audit_log WHERE at < ?").run(daysAgo(Number(process.env.AUDIT_RETENTION_DAYS ?? 365)));
-  d.prepare("DELETE FROM rinne_sessions WHERE updated_at < ? AND mode <> 'MEETING'").run(daysAgo(getSetting("rinne.history_retention_days")));
-  d.prepare("DELETE FROM meetings WHERE updated_at < ?").run(daysAgo(getSetting("meetings.retention_days")));
-  d.prepare("DELETE FROM n8n_requests WHERE created_at < ?").run(daysAgo(Number(process.env.AUDIT_RETENTION_DAYS ?? 365)));
-  d.prepare("DELETE FROM webhook_nonces WHERE seen_at < ?").run(daysAgo(1));
-  d.prepare("DELETE FROM rinne_exec_contexts WHERE expires_at < ?").run(now());
 }

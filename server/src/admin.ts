@@ -4,7 +4,6 @@ import { z } from "zod";
 import { ALL_PERMISSIONS, isPermission } from "../../shared/permissions.js";
 import { clientIp, requirePerm, revokeSessions } from "./auth.js";
 import { dbState, SCHEMAS } from "./db.js";
-import { callN8n, n8nStatus } from "./integrations/n8n.js";
 import { hashPassword, temporaryPassword } from "./passwords.js";
 import { allSettings, audit, now, setSetting, store, type SettingKey } from "./store.js";
 
@@ -206,9 +205,6 @@ export function adminRouter() {
       "security.password_min_length": z.number().int().min(10).max(64),
       "general.organization": z.string().trim().min(1).max(120),
       "general.default_period": z.enum(["Mês atual", "Mês anterior", "Ano atual", "Ano anterior", "Últimos 12 meses"]),
-      "rinne.browser_tts": z.boolean(),
-      "rinne.history_retention_days": z.number().int().min(7).max(3650),
-      "meetings.retention_days": z.number().int().min(7).max(3650),
     })
     .partial()
     .strict();
@@ -219,7 +215,6 @@ export function adminRouter() {
       environment: {
         database: (await dbState()).state,
         schemas: SCHEMAS,
-        n8n: { enabled: n8nStatus().enabled, problem: n8nStatus().problem }, // IA só via n8n; nenhuma chave de provedor na aplicação
         trustProxy: process.env.TRUST_PROXY || "loopback",
         requireProxy: process.env.REQUIRE_PROXY === "true",
         cookieSecure: process.env.COOKIE_SECURE !== "false",
@@ -235,21 +230,6 @@ export function adminRouter() {
     for (const [k, v] of Object.entries(p.data)) setSetting(k as SettingKey, v, req.user!.username);
     audit({ event: "settings.update", ...actor(req), details: { changed: p.data } });
     res.json(allSettings());
-  });
-
-  // ---------------- Integração n8n (status, rastreamento, teste) ----------------
-  r.get("/integrations/n8n", requirePerm("config.view"), (_req, res) => {
-    const history = store()
-      .prepare("SELECT request_id, correlation_id, session_id, mode, operation, status, http_status, latency_ms, error, created_at, completed_at FROM n8n_requests ORDER BY created_at DESC LIMIT 50")
-      .all();
-    res.json({ status: n8nStatus(), history });
-  });
-
-  // Teste de conectividade: operação PING (o workflow deve responder sem acionar modelos → sem custo).
-  r.post("/integrations/n8n/test", requirePerm("config.manage"), async (req, res) => {
-    const out = await callN8n({ user: null, mode: "CHAT", operation: "PING", sessionId: null, message: null });
-    audit({ event: "integration.n8n_test", outcome: out.status === "success" ? "success" : "failure", ...actor(req), details: { status: out.status, requestId: out.requestId, latencyMs: out.latencyMs } });
-    res.json({ status: out.status, requestId: out.requestId, correlationId: out.correlationId, latencyMs: out.latencyMs, error: out.error });
   });
 
   return r;

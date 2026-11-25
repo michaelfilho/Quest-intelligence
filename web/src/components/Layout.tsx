@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { matchPath, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { INDICATORS, MODULES } from "../../../shared/catalog";
 import { DB_LABEL, useFilters, useHealth, useMe } from "../lib";
-import { NAV, isMicRoute, navFor, periodPresets, type NavItem } from "../nav";
+import { NAV, navFor, periodPresets, type NavItem } from "../nav";
 import { LogoutButton } from "../pages/AuthPages";
 
 /** Itens de menu liberados ao usuário (esconder é só conveniência; o backend aplica as permissões). */
@@ -66,7 +66,6 @@ function QuickSearch() {
         onChange={(e) => {
           const hit = SEARCH.find((s) => s.label === e.target.value);
           if (hit) {
-            if (isMicRoute(hit.path)) return void (window.location.href = hit.path);
             navigate({ pathname: hit.path, search });
             setQ("");
           } else setQ(e.target.value);
@@ -116,8 +115,6 @@ export function Layout() {
                   key={n.id}
                   to={{ pathname: n.path, search }}
                   end={n.path === "/"}
-                  // Microfone: a Permissions-Policy é do documento, então entrar/sair dessas rotas recarrega a página.
-                  reloadDocument={isMicRoute(n.path) || isMicRoute(pathname)}
                   className={({ isActive }) =>
                     `mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${isActive ? "bg-q-orange text-white shadow-[0_4px_14px_rgba(245,130,32,0.35)]" : "text-white/75 hover:bg-white/5 hover:text-white"}`
                   }
@@ -168,8 +165,8 @@ export function Layout() {
           </div>
           {me && (
             <div className="flex items-center gap-3 border-l border-q-line pl-3">
-              <NavLink to="/conta" reloadDocument={isMicRoute(pathname)} className="flex items-center gap-2.5" title="Minha conta">
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-q-ink text-xs font-bold text-white">{me.name.split(/s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}</span>
+              <NavLink to="/conta" className="flex items-center gap-2.5" title="Minha conta">
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-q-ink text-xs font-bold text-white">{me.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}</span>
                 <span className="hidden leading-tight xl:block">
                   <span className="block text-sm font-semibold">{me.name}</span>
                   <span className="block text-[11px] text-q-mid">{me.role ?? "Sem perfil"}{me.scopeDepartment ? ` · ${me.scopeDepartment}` : ""}</span>

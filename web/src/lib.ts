@@ -169,5 +169,3 @@ export async function downloadFrom(path: string, params: Params, fallbackName: s
   Object.assign(document.createElement("a"), { href: url, download: name }).click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
-export const newId = () => crypto.randomUUID();

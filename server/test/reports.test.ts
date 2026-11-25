@@ -1,26 +1,22 @@
 // Central de relatórios: permissões, formatos (JSON, CSV, XLSX, Markdown), honestidade sem dados e
-// conclusões por IA somente via n8n e somente com dados reais. Ordenação de tabelas validada.
+// escopo/colunas por perfil. Ordenação de tabelas validada.
 import assert from "node:assert/strict";
 import { inflateRawSync } from "node:zlib";
 import { after, before, test } from "node:test";
 import { Client, createUser, startServer } from "./helpers.js";
-import { enableN8n, startMock } from "./n8nmock.js";
 
-const { sign } = await import("../src/integrations/n8n.js");
 const { xlsx } = await import("../src/xlsx.js");
 
 let srv: Awaited<ReturnType<typeof startServer>>;
-let mock: Awaited<ReturnType<typeof startMock>>;
 const c: Record<string, Client> = {};
 before(async () => {
   srv = await startServer();
-  mock = await startMock(sign);
   await createUser("fin", "financeiro");
   await createUser("ana", "analista");
   await createUser("dir", "diretoria");
   for (const u of ["fin", "ana", "dir"]) (c[u] = new Client(srv.base)), await c[u].login(u);
 });
-after(() => (mock.stop(), srv.stop()));
+after(() => srv.stop());
 
 /** Lê as entradas de um ZIP (formato do xlsx) e devolve { nome → conteúdo }. */
 function unzip(buf: Buffer) {
@@ -78,23 +74,14 @@ test("sem banco: relatório explicitamente marcado como DADOS INDISPONÍVEIS, se
   assert.match(z["xl/worksheets/sheet1.xml"], /DADOS INDISPONÍVEIS/);
 });
 
-test("conclusões por IA: nunca chamadas sem dados reais (sem custo desnecessário)", async () => {
-  enableN8n(mock.url);
-  const before = mock.received.length;
-  const r = (await c.fin.req("/api/reports/financeiro?conclusions=1")).body;
-  assert.equal(r.conclusions.status, "skipped");
-  assert.equal(mock.received.length, before);
-});
-
-test("escopo e colunas também valem nos relatórios; relatório de reuniões usa dados da aplicação", async () => {
+test("escopo e colunas também valem nos relatórios; relatórios fora do escopo não existem", async () => {
   const fin = (await c.fin.req("/api/reports/clientes")).body;
   const cols = fin.tables.find((t: any) => t.id === "clientes").columns.map((x: any) => x.key);
   assert.ok(cols.includes("faturado"));
   const ana = (await c.ana.req("/api/reports/clientes")).body;
   assert.ok(!ana.tables.find((t: any) => t.id === "clientes").columns.some((x: any) => x.key === "faturado"));
   assert.ok(!ana.indicators.some((i: any) => i.id === "receita_faturada"));
-  const reun = (await c.dir.req("/api/reports/reunioes")).body;
-  assert.equal(reun.tables[0].id, "reunioes");
+  assert.equal((await c.dir.req("/api/reports/reunioes")).status, 404); // relatório de reuniões removido do escopo 1.0
 });
 
 test("ordenação no servidor: coluna validada contra as permitidas", async () => {

@@ -15,14 +15,10 @@ export const PERMISSIONS = {
   "capacidade.view": "Capacidade e produtividade",
   "qualidade.view": "Qualidade dos dados",
   "relatorios.view": "Relatórios",
-  "relatorios.export": "Exportar relatórios (CSV)",
-  // RINNE
-  "rinne_ia.use": "RINNE IA (perguntas sobre os indicadores)",
-  "rinne_voz.use": "RINNE Voz (microfone)",
-  "reuniao.use": "Modo reunião (microfone)",
+  "relatorios.export": "Exportar relatórios (CSV, XLSX e Markdown)",
   // Administração
-  "config.view": "Ver configurações (banco, integrações, IA)",
-  "config.manage": "Alterar configurações gerais, segurança e IA",
+  "config.view": "Ver configurações (banco e integrações)",
+  "config.manage": "Alterar configurações gerais e segurança",
   "usuarios.manage": "Gerenciar usuários",
   "perfis.manage": "Gerenciar perfis e permissões",
   "ip.manage": "Gerenciar controle de acesso por IP",
@@ -39,9 +35,9 @@ const VIEW_ALL: Permission[] = ["estrategicos.view", "financeiro.view", "rentabi
 /** Perfis criados na primeira inicialização. Depois disso, editáveis em Configurações (exceto Administrador). */
 export const DEFAULT_ROLES: { id: string; name: string; description: string; permissions: Permission[] }[] = [
   { id: "admin", name: "Administrador", description: "Acesso total, incluindo usuários, perfis, IPs e auditoria. Não editável.", permissions: ALL_PERMISSIONS },
-  { id: "diretoria", name: "Diretoria", description: "Todos os indicadores, relatórios e RINNE. Sem administração.", permissions: [...VIEW_ALL, "rinne_ia.use", "rinne_voz.use", "reuniao.use", "config.view"] },
-  { id: "financeiro", name: "Financeiro", description: "Financeiro, rentabilidade, custos de pessoal, clientes e contratos.", permissions: ["estrategicos.view", "financeiro.view", "rentabilidade.view", "custos_pessoal.view", "clientes.view", "contratos.view", "projetos.view", "relatorios.view", "relatorios.export", "rinne_ia.use"] },
-  { id: "gestor", name: "Gestor de departamento", description: "Operação do próprio departamento (escopo definido no usuário), sem dados financeiros.", permissions: ["projetos.view", "producao.view", "departamentos.view", "capacidade.view", "clientes.view", "relatorios.view", "rinne_ia.use", "rinne_voz.use", "reuniao.use"] },
+  { id: "diretoria", name: "Diretoria", description: "Todos os indicadores e relatórios. Sem administração.", permissions: [...VIEW_ALL, "config.view"] },
+  { id: "financeiro", name: "Financeiro", description: "Financeiro, rentabilidade, custos de pessoal, clientes e contratos.", permissions: ["estrategicos.view", "financeiro.view", "rentabilidade.view", "custos_pessoal.view", "clientes.view", "contratos.view", "projetos.view", "relatorios.view", "relatorios.export"] },
+  { id: "gestor", name: "Gestor de departamento", description: "Operação do próprio departamento (escopo definido no usuário), sem dados financeiros.", permissions: ["projetos.view", "producao.view", "departamentos.view", "capacidade.view", "clientes.view", "relatorios.view"] },
   { id: "analista", name: "Analista", description: "Indicadores operacionais e qualidade dos dados.", permissions: ["projetos.view", "producao.view", "departamentos.view", "capacidade.view", "clientes.view", "qualidade.view", "relatorios.view"] },
   { id: "consulta", name: "Consulta restrita", description: "Somente projetos e produção.", permissions: ["projetos.view", "producao.view"] },
 ];
@@ -54,6 +50,9 @@ export const MODULE_PERMISSION: Record<string, Permission> = {
   clientes: "clientes.view",
   cliente: "clientes.view",
   contratado: "contratos.view",
+  contratos: "contratos.view",
+  capacidade: "capacidade.view",
+  eficiencia: "capacidade.view",
   projetos: "projetos.view",
   projeto: "projetos.view",
   producao: "producao.view",
@@ -92,6 +91,3 @@ export function itemPermission(id: string, basis?: string): Permission | null {
 
 /** Permissão exigida por uma coluna de tabela (pelo nome da coluna). */
 export const columnPermission = (key: string): Permission | null => ITEM_PERMISSION[key] ?? null;
-
-/** Rotas com microfone (Permissions-Policy própria; carregadas como documento novo). */
-export const MIC_ROUTES = ["/rinne/voz", "/reuniao"];

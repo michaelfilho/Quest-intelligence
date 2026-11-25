@@ -13,7 +13,6 @@ const btn = "flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold 
 const GROUPS: { title: string; perms: Permission[] }[] = [
   { title: "Dados e módulos", perms: ALL_PERMISSIONS.filter((p) => p.endsWith(".view") && !["config.view", "auditoria.view"].includes(p)) },
   { title: "Relatórios", perms: ["relatorios.export"] },
-  { title: "RINNE", perms: ["rinne_ia.use", "rinne_voz.use", "reuniao.use"] },
   { title: "Administração", perms: ["config.view", "config.manage", "usuarios.manage", "perfis.manage", "ip.manage", "sessoes.manage", "auditoria.view"] },
 ];
 

@@ -1,24 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Download, FileSpreadsheet, FileText, Printer } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { Download, FileSpreadsheet, FileText, Printer } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { ColumnType, Reliability, ResultStatus, Unit } from "../../../shared/contracts";
 import { FilterBar } from "../components/FilterBar";
 import { CountPill, EmptyState, ErrorState, PageHeader, Panel, ReliabilityBadge, Skeleton } from "../components/ui";
 import { api, BASIS_LABEL, downloadFrom, filterParams, fmt, fmtDate, STATUS_LABEL, toQuery, useCan, useFilters } from "../lib";
 import { NoAccess } from "./ModulePage";
-import { useRinneStatus } from "./rinne/common";
 
 export interface ReportIndicator { id: string; label: string; unit: Unit; basis: keyof typeof BASIS_LABEL; formula: string; sources: string[]; status: ResultStatus; value: unknown; previous: number | null; reliability: Reliability; reason: string | null }
 export interface ReportTable { id: string; label: string; columns: { key: string; label: string; type: ColumnType }[]; rows: Record<string, unknown>[]; total: number; status: ResultStatus; reason?: string | null }
 export interface Report {
   id: string; title: string; description: string; period: { start: string; end: string }; previousPeriod: { start: string; end: string } | null; generatedAt: string; generatedBy: string;
   filters: Record<string, string>; database: string; dataAvailable: boolean; indicators: ReportIndicator[]; tables: ReportTable[]; limitations: string[];
-  conclusions: { status: string; text: string | null; requestId: string | null; error?: string | null };
 }
 
 /** Corpo do relatório — usado na tela e na versão de impressão (PDF). */
-export function ReportBody({ r, conclusionsSlot }: { r: Report; conclusionsSlot?: ReactNode }) {
+export function ReportBody({ r }: { r: Report }) {
   return (
     <div className="space-y-5">
       {!r.dataAvailable && (
@@ -69,15 +67,6 @@ export function ReportBody({ r, conclusionsSlot }: { r: Report; conclusionsSlot?
         </section>
       ))}
       <section>
-        <h3 className="mb-2 text-sm font-bold">Conclusões</h3>
-        {r.conclusions.status === "done" && r.conclusions.text ? (
-          <div className="rounded-xl border-l-4 border-q-orange bg-white px-4 py-3 text-sm"><p className="whitespace-pre-wrap">{r.conclusions.text}</p><p className="mt-2 text-[11px] text-q-mid">Gerado pela RINNE (n8n). Os números acima foram calculados pelo sistema.</p></div>
-        ) : (
-          <p className="rounded-xl border border-q-line bg-white px-4 py-3 text-sm text-q-mid">{r.conclusions.error ?? "Conclusões inteligentes não geradas. Elas dependem da integração com o n8n e de dados reais."}</p>
-        )}
-        {conclusionsSlot}
-      </section>
-      <section>
         <h3 className="mb-2 text-sm font-bold">Limitações</h3>
         <ul className="list-disc space-y-1 pl-5 text-sm text-q-graphite">{r.limitations.map((l) => <li key={l}>{l}</li>)}</ul>
       </section>
@@ -88,13 +77,11 @@ export function ReportBody({ r, conclusionsSlot }: { r: Report; conclusionsSlot?
 export function ReportsPage() {
   const can = useCan();
   const { filters } = useFilters();
-  const rinne = useRinneStatus().data;
   const catalog = useQuery({ queryKey: ["reports"], queryFn: () => api<{ id: string; title: string; description: string }[]>("/reports"), enabled: can("relatorios.view") });
   const [sel, setSel] = useState<string | null>(null);
-  const [withConclusions, setWithConclusions] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const id = sel ?? catalog.data?.[0]?.id ?? null;
-  const params = { ...filterParams(filters), conclusions: withConclusions ? 1 : undefined };
+  const params = filterParams(filters);
   const rep = useQuery({ queryKey: ["report", id, params], queryFn: () => api<Report>(`/reports/${id}`, params), enabled: !!id });
   if (!can("relatorios.view")) return <NoAccess title="Relatórios" />;
 
@@ -109,12 +96,12 @@ export function ReportsPage() {
 
   return (
     <div className="mx-auto max-w-[1480px] space-y-6">
-      <PageHeader icon={FileText} title="Central de relatórios" subtitle="Cálculos e documentos gerados pelo sistema. Conclusões inteligentes são opcionais, feitas pela RINNE (n8n) e somente com dados reais." right={catalog.data && <CountPill>{catalog.data.length} relatórios disponíveis</CountPill>} />
+      <PageHeader icon={FileText} title="Central de relatórios" subtitle="Cálculos e documentos gerados pelo sistema. Sem dados reais, os relatórios são marcados como indisponíveis e não exibem valores." right={catalog.data && <CountPill>{catalog.data.length} relatórios disponíveis</CountPill>} />
       <FilterBar />
       {catalog.isError && <ErrorState error={catalog.error} />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {catalog.data?.map((r) => (
-          <button key={r.id} onClick={() => (setSel(r.id), setWithConclusions(false), setMsg(null))} aria-pressed={r.id === id} className={`rounded-xl border bg-white p-4 text-left transition ${r.id === id ? "border-q-orange shadow-[0_0_0_3px_rgba(245,130,32,0.15)]" : "border-q-line hover:border-q-mid"}`}>
+          <button key={r.id} onClick={() => (setSel(r.id), setMsg(null))} aria-pressed={r.id === id} className={`rounded-xl border bg-white p-4 text-left transition ${r.id === id ? "border-q-orange shadow-[0_0_0_3px_rgba(245,130,32,0.15)]" : "border-q-line hover:border-q-mid"}`}>
             <div className={`text-sm font-bold ${r.id === id ? "text-q-orange" : ""}`}>{r.title}</div>
             <div className="mt-1 line-clamp-2 text-xs text-q-mid">{r.description}</div>
           </button>
@@ -140,21 +127,7 @@ export function ReportsPage() {
           <div className="border-t border-q-line bg-q-bg/40 p-5">
             {msg && <p role="alert" className="mb-3 rounded-lg border-l-4 border-q-orange bg-white px-3 py-2 text-sm">{msg}</p>}
             {rep.isError ? <ErrorState error={rep.error} onRetry={() => rep.refetch()} /> : !rep.data ? <Skeleton className="h-40 w-full" /> : (
-              <ReportBody
-                r={rep.data}
-                conclusionsSlot={
-                  rep.data.id !== "reunioes" && (
-                    <button
-                      disabled={!rep.data.dataAvailable || !rinne?.available || withConclusions}
-                      onClick={() => setWithConclusions(true)}
-                      title={!rep.data.dataAvailable ? "Sem dados reais, não há conclusões a gerar." : !rinne?.available ? "Integração com o n8n indisponível." : undefined}
-                      className="mt-2 flex h-9 items-center gap-1.5 rounded-lg border border-q-line bg-white px-3 text-xs font-semibold disabled:opacity-50"
-                    >
-                      <Bot size={14} /> Gerar conclusões com a RINNE
-                    </button>
-                  )
-                }
-              />
+              <ReportBody r={rep.data} />
             )}
           </div>
         </Panel>

@@ -7,19 +7,14 @@ import { Layout } from "./components/Layout";
 import { EmptyState, ErrorState, Skeleton } from "./components/ui";
 import "./index.css";
 import { ApiError, useMe } from "./lib";
-import { ForcedPasswordPage, LoginPage } from "./pages/AuthPages";
+import { AccountPage, ForcedPasswordPage, LoginPage } from "./pages/AuthPages";
 
 // Páginas carregadas sob demanda (bundle inicial menor; gráficos só quando necessários).
 const named = <K extends string>(load: () => Promise<Record<K, React.ComponentType<any>>>, name: K) => lazy(() => load().then((m) => ({ default: m[name] })));
 const ModulePage = named(() => import("./pages/ModulePage"), "ModulePage");
 const ReportsPage = named(() => import("./pages/ReportsPage"), "ReportsPage");
 const SettingsPage = named(() => import("./pages/SettingsPage"), "SettingsPage");
-const AccountPage = named(() => import("./pages/AuthPages"), "AccountPage");
-const ChatPage = named(() => import("./pages/rinne/ChatPage"), "ChatPage");
-const VoicePage = named(() => import("./pages/rinne/VoicePage"), "VoicePage");
-const MeetingPage = named(() => import("./pages/rinne/MeetingPage"), "MeetingPage");
 const ReportPrintPage = named(() => import("./pages/PrintPages"), "ReportPrintPage");
-const MeetingPrintPage = named(() => import("./pages/PrintPages"), "MeetingPrintPage");
 
 const client: QueryClient = new QueryClient({
   // Sessão expirada/revogada em qualquer chamada → volta para o login.
@@ -42,15 +37,11 @@ const page = (el: ReactNode) => <Suspense fallback={<Skeleton className="mx-auto
 
 const router = createBrowserRouter([
   { path: "/relatorios/:id/imprimir", element: page(<ReportPrintPage />) },
-  { path: "/reuniao/:id/imprimir", element: page(<MeetingPrintPage />) },
   {
     element: <Layout />,
     children: [
       ...MODULES.map((m) => ({ path: m.path, element: page(<ModulePage key={m.id} moduleId={m.id} />) })),
       { path: "/relatorios", element: page(<ReportsPage />) },
-      { path: "/rinne", element: page(<ChatPage />) },
-      { path: "/rinne/voz", element: page(<VoicePage />) },
-      { path: "/reuniao", element: page(<MeetingPage />) },
       { path: "/configuracoes", element: page(<SettingsPage />) },
       { path: "/conta", element: page(<AccountPage />) },
       {

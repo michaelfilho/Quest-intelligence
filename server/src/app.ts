@@ -5,14 +5,11 @@ import { DIMENSIONS, previousPeriod, type Dimension } from "../../shared/contrac
 import type { Permission } from "../../shared/permissions.js";
 import { accessGuard, accessRouter } from "./access.js";
 import { adminRouter } from "./admin.js";
-import { authenticate, authRouter, can, csrf, requireAuth, requirePerm } from "./auth.js";
+import { authenticate, authRouter, can, csrf, requireAuth } from "./auth.js";
 import { allowedColumns, chartAllowed, indicatorAllowed, moduleAllowed, scopeFilters, stripRows, tableAllowed } from "./authz.js";
 import { dbState, q, SCHEMAS } from "./db.js";
 import { filtersSchema, pageSchema } from "./filters.js";
-import { internalRouter } from "./integrations/internal.js";
-import { meetingsRouter } from "./meetings/router.js";
 import { reportsRouter } from "./reports.js";
-import { rinneRouter } from "./rinne.js";
 import { resolveDimension, resolveIndicator, resolveModule, resolveRecords, resolveTable } from "./services.js";
 
 class HttpError extends Error {
@@ -49,10 +46,6 @@ export function createApp() {
     res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store", "X-Frame-Options": "DENY" });
     next();
   });
-
-  // Chamadas do n8n (rede privada; bloqueadas no nginx): HMAC + timestamp + nonce + contexto de execução.
-  // Ficam fora da allowlist de humanos e da sessão de navegador, mas NUNCA substituem a autorização do usuário.
-  app.use("/api/internal", internalRouter());
 
   // 1) IP (allowlist + REQUIRE_PROXY) → 2) sessão → 3) CSRF. Tudo antes de qualquer rota.
   app.use("/api", accessGuard, authenticate, csrf);
@@ -123,9 +116,6 @@ export function createApp() {
     res.json(await resolveDimension(dim));
   }));
 
-  // RINNE (CHAT/VOICE/MEETING) — inteligência única via n8n; reuniões com máquina de estados no backend.
-  app.use("/api/rinne/meetings", meetingsRouter());
-  app.use("/api/rinne", rinneRouter());
   app.use("/api/reports", reportsRouter());
 
   // Cobertura: tabelas reais dos schemas autorizados (catálogo do PostgreSQL, sem full scan).

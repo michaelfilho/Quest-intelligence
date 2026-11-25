@@ -2,8 +2,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MODULES, TABLES } from "../../shared/catalog";
-import { columnPermission, DEFAULT_ROLES, MIC_ROUTES, MODULE_PERMISSION } from "../../shared/permissions";
-import { isMicRoute, NAV, navFor } from "./nav";
+import { columnPermission, DEFAULT_ROLES, MODULE_PERMISSION } from "../../shared/permissions";
+import { NAV, navFor } from "./nav";
 
 describe("menu por perfil", () => {
   it("sem permissões, nenhum item (bloqueio por padrão)", () => {
@@ -35,24 +35,22 @@ describe("colunas sensíveis", () => {
   });
 });
 
-describe("microfone", () => {
-  it("só as rotas de voz/reunião liberam o microfone", () => {
-    expect(isMicRoute("/rinne/voz")).toBe(true);
-    expect(isMicRoute("/reuniao")).toBe(true);
-    for (const p of ["/", "/financeiro", "/rinne", "/reuniao-falsa", "/rinne/vozes"]) expect(isMicRoute(p), p).toBe(false);
+describe("câmera, microfone e localização", () => {
+  const conf = readFileSync(new URL("../nginx.conf.template", import.meta.url), "utf8");
+  const headers = readFileSync(new URL("../security-headers.conf", import.meta.url), "utf8");
+  const policy = /add_header Permissions-Policy "([^"]+)"/.exec(headers)?.[1] ?? "";
+
+  it("Permissions-Policy bloqueia câmera, microfone e localização em todas as páginas", () => {
+    for (const f of ["camera", "microphone", "geolocation"]) expect(policy, f).toContain(`${f}=()`);
+    // nenhuma liberação, nem para a própria origem: todo "(...)" da política precisa estar vazio
+    expect(policy.split(",").every((d) => /=\(\)$/.test(d.trim()))).toBe(true);
   });
-  it("a regra do nginx (Permissions-Policy) cobre exatamente as mesmas rotas", () => {
-    const conf = readFileSync(new URL("../nginx.conf.template", import.meta.url), "utf8");
-    const m = /~\^(\S+)\s+"camera=\(\), microphone=\(self\)/.exec(conf);
-    expect(m).not.toBeNull();
-    const re = new RegExp("^" + m![1]);
-    for (const r of MIC_ROUTES) {
-      expect(re.test(r), r).toBe(true);
-      expect(re.test(r + "?x=1"), r).toBe(true);
-    }
-    for (const p of ["/", "/financeiro", "/rinne", "/reuniao-falsa", "/rinne/vozes"]) expect(re.test(p), p).toBe(false);
-    const headers = readFileSync(new URL("../security-headers.conf", import.meta.url), "utf8");
-    expect(headers).toMatch(/Permissions-Policy \$permissions_policy/);
-    expect(conf).toMatch(/default\s+"camera=\(\), microphone=\(\), geolocation=\(\)/);
+  it("não existe regra por rota nem variável de política no nginx", () => {
+    expect(conf).not.toContain("permissions_policy");
+    expect(conf).not.toContain("microphone=(self)");
+    expect(headers).not.toContain("$");
+  });
+  it("CSP não libera mídia (áudio/vídeo)", () => {
+    expect(headers).toContain("media-src 'none'");
   });
 });

@@ -20,10 +20,10 @@ const results = [];
 const consoleIssues = [];
 let label = "início";
 
-const browser = await chromium.launch({ executablePath: EDGE, headless: true, args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] });
+const browser = await chromium.launch({ executablePath: EDGE, headless: true });
 
 async function newPage(viewport, storageState) {
-  const ctx = await browser.newContext({ viewport, locale: "pt-BR", timezoneId: "America/Sao_Paulo", permissions: ["microphone"], acceptDownloads: true, storageState });
+  const ctx = await browser.newContext({ viewport, locale: "pt-BR", timezoneId: "America/Sao_Paulo", acceptDownloads: true, storageState });
   const page = await ctx.newPage();
   page.setDefaultTimeout(12000);
   page.on("console", (m) => m.type() === "error" && consoleIssues.push({ where: label, text: m.text().slice(0, 300) }));
@@ -88,8 +88,7 @@ await check("primeiro acesso: troca obrigatória da senha temporária", async ()
 const ROUTES = [
   ["/", "Visão geral"], ["/clientes", "Clientes"], ["/clientes/123", "Cliente"], ["/projetos", "Projetos / Jobs"], ["/projetos/987", "Projeto"], ["/rentabilidade", "Rentabilidade"],
   ["/financeiro", "Financeiro"], ["/timesheet", "Timesheet"], ["/departamentos", "Departamentos"], ["/colaboradores", "Colaboradores"], ["/produtividade", "Produtividade"],
-  ["/producao", "Produção"], ["/contratado", "Contratado × executado"], ["/qualidade", "Qualidade dos dados"], ["/relatorios", "Central de relatórios"], ["/rinne", "RINNE IA"],
-  ["/rinne/voz", "RINNE Voz"], ["/reuniao", "Modo reunião"], ["/configuracoes", "Configurações"], ["/conta", "Minha conta"],
+  ["/producao", "Produção"], ["/contratado", "Contratado × executado"], ["/contratos", "Contratos"], ["/capacidade", "Capacidade operacional"], ["/eficiencia", "Eficiência"], ["/qualidade", "Qualidade dos dados"], ["/relatorios", "Central de relatórios"], ["/configuracoes", "Configurações"], ["/conta", "Minha conta"],
 ];
 for (const [path, title] of ROUTES) {
   await check(`tela ${path}`, async () => {
@@ -101,6 +100,15 @@ for (const [path, title] of ROUTES) {
   });
 }
 
+await check("escopo 1.0: sem IA, voz ou reunião no menu nem nas rotas", async () => {
+  await p.goto(BASE + "/");
+  const nav = p.getByRole("navigation", { name: "Módulos" });
+  for (const gone of ["RINNE IA", "RINNE Voz", "Modo reunião"]) if (await nav.getByRole("link", { name: gone }).count()) throw new Error("ainda no menu: " + gone);
+  for (const path of ["/rinne", "/rinne/voz", "/reuniao"]) {
+    await p.goto(BASE + path);
+    await p.getByText("Página não encontrada").first().waitFor();
+  }
+});
 await check("sem banco: aviso DATABASE_UNAVAILABLE e nenhum valor inventado", async () => {
   await p.goto(BASE + "/financeiro");
   await p.getByText("DATABASE_UNAVAILABLE").first().waitFor();
@@ -136,76 +144,6 @@ await check("filtros globais: período e comparação persistem na URL entre mó
   if (!p.url().includes("compare=1")) throw new Error("filtros perdidos na navegação");
 });
 
-await check("RINNE IA: nova conversa, pergunta e indisponibilidade do n8n sem resposta fictícia", async () => {
-  await p.goto(BASE + "/rinne");
-  await p.getByText("Inteligência da RINNE indisponível").waitFor();
-  await p.getByRole("button", { name: "Nova" }).click();
-  await p.getByRole("button", { name: "Quanto recebemos neste mês?" }).click();
-  await p.getByText(/análise inteligente da RINNE está indisponível/).first().waitFor({ timeout: 20000 });
-  await p.getByText("Indicadores consultados (calculados pelo sistema)").first().waitFor();
-  await shot(p, "rinne-ia");
-});
-await check("RINNE IA: renomear conversa", async () => {
-  await p.getByRole("button", { name: /^Renomear/ }).first().click({ force: true });
-  await p.getByLabel("Título da conversa").fill("Receita do mês");
-  await p.getByRole("button", { name: "Salvar título" }).click();
-  await p.getByText("Receita do mês").first().waitFor();
-});
-
-await check("RINNE Voz: consentimento, captura de segmento (microfone falso), envio e estado", async () => {
-  await p.goto(BASE + "/rinne/voz");
-  await p.getByRole("button", { name: "Nova" }).click();
-  const consent = p.getByLabel(/Autorizo o uso do microfone nesta conversa/);
-  await consent.check();
-  await p.getByRole("button", { name: "Ativar microfone" }).click();
-  await p.getByRole("button", { name: "Falar" }).waitFor({ timeout: 10000 });
-  await p.getByRole("button", { name: "Falar" }).click();
-  await p.getByText("Ouvindo…").waitFor();
-  await p.waitForTimeout(1500);
-  await p.locator('button:has-text("Enviar")').first().click();
-  await p.getByText(/\[áudio \d+ s\]/).waitFor({ timeout: 20000 });
-  await p.getByText(/análise inteligente da RINNE está indisponível/).first().waitFor({ timeout: 20000 });
-  await shot(p, "rinne-voz");
-  await p.getByRole("button", { name: "Desligar microfone" }).click();
-  await p.getByRole("button", { name: "Ativar microfone" }).waitFor();
-});
-
-await check("Modo reunião: fluxo completo com máquina de estados e relatório", async () => {
-  await p.goto(BASE + "/reuniao");
-  await p.getByPlaceholder("Título da reunião (opcional)").fill("Reunião de homologação");
-  await p.getByRole("button", { name: "Iniciar modo reunião" }).click();
-  await p.getByLabel(/Autorizo o uso do microfone para transcrição/).check();
-  await p.getByRole("button", { name: /Continuar com microfone/ }).click();
-  await p.getByText("Qual departamento você deseja analisar?").waitFor();
-  await p.getByLabel("Departamento").fill("Criação");
-  await p.getByRole("button", { name: "Analisar departamento" }).click();
-  await p.getByRole("button", { name: "Este mês" }).click();
-  await p.getByText(/Analisando Criação/).waitFor();
-  await p.getByLabel("Tipo de registro").selectOption("decision");
-  await p.getByLabel("Registro", { exact: true }).fill("Priorizar a campanha do cliente X");
-  await p.getByRole("button", { name: "Registrar" }).click();
-  await p.getByText("Priorizar a campanha do cliente X").first().waitFor();
-  await p.getByRole("button", { name: "Iniciar captura" }).click();
-  await p.getByText("Capturando").waitFor();
-  await p.getByRole("button", { name: "Parar captura" }).click();
-  await p.getByText(/total na reunião: 1/).waitFor({ timeout: 20000 });
-  await p.getByLabel("Comando ou pergunta").fill("Quais entregas atrasaram?");
-  await p.getByRole("button", { name: "Enviar" }).click();
-  await p.getByText(/indisponível/).first().waitFor();
-  await shot(p, "reuniao-analise");
-  await p.getByRole("button", { name: "Departamento finalizado" }).click();
-  await p.getByText(/Qual é o próximo departamento/).waitFor();
-  await p.getByRole("button", { name: "Encerrar reunião" }).click();
-  await p.getByText("Relatório da reunião").waitFor();
-  const [dl] = await Promise.all([p.waitForEvent("download"), p.getByRole("button", { name: "Markdown" }).click()]);
-  if (!/\.md$/.test(dl.suggestedFilename())) throw new Error("download md: " + dl.suggestedFilename());
-  const [popup] = await Promise.all([p.waitForEvent("popup"), p.getByRole("link", { name: "PDF (imprimir)" }).click()]);
-  await popup.getByText("Priorizar a campanha do cliente X").waitFor();
-  await popup.screenshot({ path: outFile("reuniao-impressao.png"), fullPage: true });
-  await popup.close();
-  await shot(p, "reuniao-encerrada");
-});
-
 await check("Relatórios: pré-visualização honesta e exportação XLSX/CSV/MD", async () => {
   await p.goto(BASE + "/relatorios");
   await p.getByRole("button", { name: /Relatório financeiro/ }).click();
@@ -224,17 +162,12 @@ await check("Relatórios: pré-visualização honesta e exportação XLSX/CSV/MD
 let restrictedTemp = null;
 await check("Configurações: todas as seções abrem", async () => {
   await p.goto(BASE + "/configuracoes");
-  for (const s of ["Usuários", "Perfis e permissões", "Controle de acesso por IP", "Sessões ativas", "Histórico de acessos", "Segurança", "Integrações", "Banco de dados", "Inteligência RINNE", "Voz", "Retenção de reuniões", "Configurações gerais"]) {
+  for (const s of ["Usuários", "Perfis e permissões", "Controle de acesso por IP", "Sessões ativas", "Histórico de acessos", "Segurança", "Integrações", "Banco de dados", "Configurações gerais"]) {
     await p.getByRole("navigation", { name: "Seções de configurações" }).getByRole("button", { name: s, exact: true }).click();
     await settle(p);
     if (await p.getByText("Erro inesperado").count()) throw new Error("erro na seção " + s);
     await shot(p, "config-" + s.normalize("NFD").replace(/[^\w]+/g, "-").toLowerCase());
   }
-});
-await check("Configurações: teste de conectividade do n8n informa indisponibilidade", async () => {
-  await p.getByRole("button", { name: "Inteligência RINNE" }).click();
-  await p.getByRole("button", { name: "Testar conectividade" }).click();
-  await p.getByText(/unavailable/).first().waitFor();
 });
 await check("Configurações: criar usuário com perfil restrito (Analista)", async () => {
   await p.getByRole("button", { name: "Usuários", exact: true }).click();
@@ -244,8 +177,9 @@ await check("Configurações: criar usuário com perfil restrito (Analista)", as
   await p.getByLabel("Perfil").selectOption({ label: "Analista" });
   await p.getByRole("button", { name: "Criar e gerar senha temporária" }).click();
   await p.getByText("Senha temporária de analista.homolog").waitFor();
-  restrictedTemp = (await p.locator("code").first().textContent())?.trim();
-  if (!restrictedTemp || restrictedTemp.length < 12) throw new Error("senha temporária não exibida");
+  // Caixa da senha temporária (a mesma que o administrador copia); o formato é validado para não capturar outro texto.
+  restrictedTemp = (await p.locator("div.border-q-orange:has-text(\"Senha temporária de analista.homolog\") code").first().textContent())?.trim();
+  if (!restrictedTemp || !/^[A-Za-z0-9_-]{16}$/.test(restrictedTemp)) throw new Error("senha temporária inválida/não exibida: " + restrictedTemp);
   await shot(p, "config-usuario-criado");
 });
 
@@ -262,7 +196,7 @@ await check("notebook 1280×720: visão geral e financeiro sem rolagem horizonta
 });
 const mob = await newPage({ width: 390, height: 844 }, state);
 await check("celular 390×844: menu, telas principais e ausência de rolagem horizontal", async () => {
-  for (const path of ["/", "/rinne", "/reuniao", "/relatorios", "/configuracoes"]) {
+  for (const path of ["/", "/financeiro", "/clientes", "/relatorios", "/configuracoes"]) {
     await mob.page.goto(BASE + path);
     await settle(mob.page);
     await noOverflow(mob.page);
@@ -272,7 +206,9 @@ await check("celular 390×844: menu, telas principais e ausência de rolagem hor
   await mob.page.getByRole("button", { name: "Abrir menu" }).click();
   await mob.page.getByRole("navigation", { name: "Módulos" }).getByRole("link", { name: "Financeiro" }).waitFor();
   await shot(mob.page, "celular-menu-aberto");
-  await mob.page.getByRole("button", { name: "Fechar menu" }).click();
+  // O centro do botão de fechar fica sob o painel aberto: o toque do usuário é na área escurecida, à direita.
+  await mob.page.getByRole("button", { name: "Fechar menu" }).click({ position: { x: 350, y: 400 } });
+  await mob.page.getByRole("button", { name: "Abrir menu" }).waitFor();
 });
 
 // ---------------- Usuário restrito ----------------
@@ -286,10 +222,10 @@ await check("perfil restrito: troca de senha, menu filtrado e bloqueio por padr�
   await changePassword(r, restrictedTemp, "Analista-Homolog-2026!");
   const nav = r.getByRole("navigation", { name: "Módulos" });
   await nav.waitFor();
-  for (const forbidden of ["Financeiro", "Rentabilidade", "Configurações", "RINNE IA", "Modo reunião"]) if (await nav.getByRole("link", { name: forbidden, exact: true }).count()) throw new Error(`item proibido no menu: ${forbidden}`);
-  for (const allowed of ["Produção", "Projetos / Jobs", "Qualidade dos dados"]) await nav.getByRole("link", { name: allowed, exact: true }).waitFor();
+  for (const forbidden of ["Financeiro", "Rentabilidade", "Configurações"]) if (await nav.getByRole("link", { name: forbidden, exact: true }).count()) throw new Error(`item proibido no menu: ${forbidden}`);
+  for (const allowed of ["Produção", "Projetos / Jobs", "Qualidade dos dados"]) await nav.getByRole("link", { name: allowed }).waitFor(); // nome inclui o selo OFFLINE em Qualidade
   await shot(r, "restrito-menu");
-  for (const path of ["/financeiro", "/rentabilidade", "/configuracoes", "/rinne", "/reuniao"]) {
+  for (const path of ["/financeiro", "/rentabilidade", "/configuracoes"]) {
     await r.goto(BASE + path);
     await r.getByText(/Sem permissão para/).waitFor();
   }

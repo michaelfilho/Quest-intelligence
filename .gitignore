@@ -29,3 +29,10 @@ id_ed25519*
 coverage/
 .DS_Store
 Thumbs.db
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sql.gz
+*.dump
+*.bak
+backups/

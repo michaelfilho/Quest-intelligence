@@ -11,7 +11,7 @@ Estado: **não conectado**. Toda a aplicação funciona sem o banco, mostrando `
   3. a API não tem rotas de escrita no banco analítico.
 - A API recusa `DATABASE_URL` que não seja `postgres://…/quest_rinne` ou que use o usuário `postgres`.
 - `statement_timeout` de 15 s, pool de 10 conexões e SQL sempre parametrizado.
-- Usuários, sessões, auditoria, conversas e reuniões ficam no **SQLite da aplicação**, isolado do banco analítico.
+- Usuários, perfis, sessões, auditoria e configurações ficam no **SQLite da aplicação**, isolado do banco analítico.
 
 ## Passo a passo (na fase de deploy)
 
@@ -25,7 +25,7 @@ Estado: **não conectado**. Toda a aplicação funciona sem o banco, mostrando `
 5. Comparar cada total com uma consulta SQL independente e registrar o resultado em [HOMOLOGACAO_LOCAL.md](HOMOLOGACAO_LOCAL.md) (seção produção).
 6. `npm run docs:indicators` atualiza a coluna "situação" do dicionário.
 
-Nada mais precisa mudar: telas, relatórios, RINNE e ferramentas do n8n usam as mesmas funções.
+Nada mais precisa mudar: telas e relatórios usam as mesmas funções.
 
 ## Regras de confiabilidade a implementar nos mapeamentos
 

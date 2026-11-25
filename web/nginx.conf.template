@@ -5,13 +5,6 @@ limit_req_zone $binary_remote_addr zone=api:10m rate=20r/s;
 limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
 limit_req_zone $binary_remote_addr zone=site:10m rate=30r/s;
 
-# Microfone liberado SOMENTE nas rotas do RINNE Voz e do Modo Reunião (mesma origem, HTTPS, com consentimento na tela).
-# $request_uri = URI original (o try_files do SPA reescreve $uri para /index.html).
-map $request_uri $permissions_policy {
-    default                              "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=()";
-    ~^/(rinne/voz|reuniao)(/|\?|$)       "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), display-capture=()";
-}
-
 server {
     listen 80;
     server_tokens off;
@@ -30,6 +23,18 @@ server {
 
     # Atenção: add_header em um location descarta os do server — por isso o include se repete.
     include /etc/nginx/snippets/security-headers.conf;
+
+    # Somente loopback: liveness do container, sem dados ou bypass das rotas da aplicação.
+    location = /_health {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        auth_request off;
+        auth_basic off;
+        access_log off;
+        root /usr/share/nginx/html;
+        try_files /index.html =503;
+    }
 
     location = /_access {
         internal;
@@ -55,37 +60,6 @@ server {
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Real-IP "";
         proxy_set_header CF-Connecting-IP "";
-    }
-
-    # Rotas chamadas pelo n8n: só pela rede privada do Docker (direto na API), nunca pela internet.
-    location /api/internal/ {
-        deny all;
-    }
-
-    # Segmentos de áudio (RINNE Voz / Modo reunião): até 2 MB por segmento.
-    location ~ ^/api/rinne/(sessions|meetings)/[A-Za-z0-9-]+/audio$ {
-        auth_request off;
-        client_max_body_size 3m;
-        limit_req zone=api burst=10 nodelay;
-        proxy_pass http://${API_UPSTREAM};
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Real-IP "";
-        proxy_set_header CF-Connecting-IP "";
-        proxy_request_buffering on;
-        proxy_read_timeout 120s;
-    }
-
-    # RINNE: respostas do n8n podem levar até RINNE_N8N_TIMEOUT_MS (padrão 60 s).
-    location /api/rinne/ {
-        auth_request off;
-        limit_req zone=api burst=20 nodelay;
-        proxy_pass http://${API_UPSTREAM};
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Real-IP "";
-        proxy_set_header CF-Connecting-IP "";
-        proxy_read_timeout 120s;
     }
 
     # A API aplica allowlist, sessão e permissões por conta própria; não precisa da subrequisição.

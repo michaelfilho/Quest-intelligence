@@ -138,7 +138,9 @@ export function LogoutButton({ className = "" }: { className?: string }) {
       className={className}
       onClick={async () => {
         await send("POST", "/auth/logout").catch(() => null);
-        qc.clear(); // nenhum dado da sessão anterior fica em memória
+        // Nenhum dado da sessão anterior fica em memória — exceto a consulta "me", que precisa existir para
+        // ser refeita: ela devolve 401 e o Gate volta para a tela de login.
+        qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
         await qc.resetQueries({ queryKey: ["me"] });
       }}
     >

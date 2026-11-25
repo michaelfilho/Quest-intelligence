@@ -41,7 +41,6 @@ test("bloqueio por padrão: usuário sem perfil não acessa nada", async () => {
   const c = as.sem_perfil;
   assert.deepEqual((await c.req("/api/modules")).body, []);
   for (const p of ["/api/modules/projetos", "/api/tables/projetos", "/api/indicators/horas_registradas", "/api/dimensions/clients", "/api/metadata/coverage", "/api/admin/users"]) assert.equal((await c.req(p)).status, 403, p);
-  assert.equal((await c.req("/api/rinne/ask", { method: "POST", body: { question: "quanto recebemos" } })).status, 403);
   assert.equal((await c.req("/api/auth/me")).status, 200); // pode ver a si mesmo
 });
 
@@ -127,16 +126,4 @@ test("perfis: alteração vale na hora; Administrador é imutável; excluir perf
   assert.equal((await adm.req("/api/admin/roles/diretoria", { method: "DELETE" })).status, 409);
   const ev = store().prepare("SELECT event FROM audit_log WHERE event LIKE 'role.%'").all().map((r) => r.event);
   assert.ok(ev.includes("role.permissions_update") && ev.includes("role.create") && ev.includes("role.delete"));
-});
-
-test("RINNE IA: responde só com indicadores liberados ao perfil", async () => {
-  const d = await as.u_diretoria.req("/api/rinne/ask", { method: "POST", body: { question: "Quanto recebemos neste mês?" } });
-  assert.equal(d.status, 200);
-  assert.equal(d.body.mode, "deterministico");
-  assert.ok(d.body.answers.some((a: any) => a.id === "receita_recebida"));
-  assert.equal(d.body.answers[0].value, null); // sem banco: nunca inventa valor
-  const g = await as.u_gestor.req("/api/rinne/ask", { method: "POST", body: { question: "Quanto recebemos neste mês?" } });
-  assert.equal(g.status, 200);
-  assert.ok(!g.body.answers.some((a: any) => a.id === "receita_recebida"));
-  assert.equal((await as.u_analista.req("/api/rinne/ask", { method: "POST", body: { question: "horas" } })).status, 403);
 });

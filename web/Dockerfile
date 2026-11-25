@@ -17,3 +17,4 @@ COPY --from=build /app/web/dist /usr/share/nginx/html
 RUN touch /etc/nginx/htpasswd
 ENV API_UPSTREAM=api:3333 AUTH_BASIC=off REAL_IP_FROM=""
 EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1/_health >/dev/null || exit 1
