@@ -97,6 +97,8 @@ interface ResultBase {
 }
 
 export interface IndicatorResult extends ResultBase {
+  temporalField?: string;
+  coverage?: string;
   value: number | string | null;
   previous: number | null;
   recordsUsed?: number;

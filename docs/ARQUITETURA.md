@@ -1,5 +1,15 @@
 # Arquitetura do QUEST RINNE 1.0
 
+## Integração em tempo de execução
+
+`schema.ts` consulta o catálogo PostgreSQL pela conexão já existente, com cache de estrutura em memória de cinco minutos. O CLI `introspect` usa a mesma descoberta. `mappings.ts` registra consultas de `analytics.ts`, `cash.ts`, `quality.ts` e `registry-counts.ts`; colunas e tipos precisam corresponder a perfis explícitos. Não existe reconhecimento de fórmulas por heurística nem cópia dos registros para outro banco.
+
+São 29 indicadores com SQL condicional, 7 gráficos e 10 tabelas; os demais 40 indicadores têm limitações explícitas. Nenhum foi certificado com dados reais nesta execução. Resultados parciais e em reconciliação carregam período, campo temporal, cobertura, exclusões e limitações. Fotografias de cadastro/monitoramento não fabricam comparação histórica.
+
+A interface atualiza consultas a cada 60 segundos enquanto ativa. O n8n continua somente alimentando o PostgreSQL existente. O backend permanece intermediário obrigatório, aplicando permissões e escopo antes da consulta.
+
+Build público configurável: `VITE_BASE_PATH`, basename do Router e URLs da API compartilham a mesma base. Na VPS, `/core/` no navegador é removido pelo Traefik antes do nginx; o backend recebe `/api`. O backend é o único responsável por `Path` do cookie, via `APP_BASE_PATH`; não há transformação adicional no nginx. Localmente a base permanece `/`.
+
 ```
 Navegador (React) ──► nginx (web) ──► API (Express/TS) ──► PostgreSQL quest_rinne  (core/ingest/audit, SOMENTE LEITURA)
 telas · filtros · gráficos   allowlist IP · CSP      sessão · permissões · cálculos   └► SQLite app.db (usuários, perfis, sessões,

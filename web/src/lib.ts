@@ -22,7 +22,7 @@ export const toQuery = (params: Params) => {
 async function request<T>(method: string, path: string, params: Params, body?: unknown): Promise<T> {
   let r: Response;
   try {
-    r = await fetch(`/api${path}${toQuery(params)}`, {
+    r = await fetch(`${import.meta.env.BASE_URL}api${path}${toQuery(params)}`, {
       method,
       credentials: "same-origin",
       // Header próprio = proteção CSRF exigida pela API em métodos que alteram estado.
@@ -159,7 +159,7 @@ export const DB_LABEL: Record<DbState, string> = {
 
 /** Baixa um arquivo gerado pela API (mantém o cookie de sessão; nada fica em cache local). */
 export async function downloadFrom(path: string, params: Params, fallbackName: string) {
-  const r = await fetch(`/api${path}${toQuery(params)}`, { credentials: "same-origin" });
+  const r = await fetch(`${import.meta.env.BASE_URL}api${path}${toQuery(params)}`, { credentials: "same-origin" });
   if (!r.ok) {
     const j = await r.json().catch(() => null);
     throw new ApiError(r.status, j?.error ?? `HTTP ${r.status}`);

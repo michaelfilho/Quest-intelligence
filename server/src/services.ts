@@ -3,6 +3,8 @@ import { previousPeriod } from "../../shared/contracts.js";
 import type { ChartResult, DbState, Dimension, DimensionResult, Filters, IndicatorResult, ModuleDef, ModuleResult, ResultStatus, TableResult } from "../../shared/contracts.js";
 import { dbState } from "./db.js";
 import { chartImpls, dimensionImpls, indicatorImpls, tableImpls, type Page } from "./mappings.js";
+import { SourceLimitation } from "./analytics.js";
+import { mappingLimitation } from "./mapping-limitations.js";
 
 const REASONS: Record<Exclude<ResultStatus, "OK" | "INSUFFICIENT_DATA">, string> = {
   DATABASE_UNAVAILABLE: "Banco de dados indisponível. Configure DATABASE_URL e verifique a conexão com o PostgreSQL quest_rinne.",
@@ -12,7 +14,7 @@ const REASONS: Record<Exclude<ResultStatus, "OK" | "INSUFFICIENT_DATA">, string>
 };
 
 const unavailable = (id: string, status: Exclude<ResultStatus, "OK" | "INSUFFICIENT_DATA">) =>
-  ({ id, status, reliability: "INDISPONIVEL" as const, reason: REASONS[status] });
+  ({ id, status, reliability: "INDISPONIVEL" as const, reason: status === "NOT_IMPLEMENTED" ? mappingLimitation(id) : REASONS[status] });
 
 function logError(scope: string, id: string, e: unknown) {
   console.error(JSON.stringify({ level: "error", scope, id, error: (e as Error).message }));
@@ -25,15 +27,16 @@ export async function resolveIndicator(id: string, f: Filters, db: DbState): Pro
   if (!impl) return { ...unavailable(id, "NOT_IMPLEMENTED"), ...empty };
   try {
     const cur = await impl.compute(f);
-    if (cur.insufficient) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: cur.insufficient, ...empty };
+    if (cur.insufficient) return { ...cur, id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: cur.insufficient, ...empty };
     let previous: number | null = null;
-    if (f.compare) {
+    if (f.compare && impl.comparable !== false) {
       const prev = await impl.compute({ ...f, ...previousPeriod(f.start, f.end) });
       previous = typeof prev.value === "number" && !prev.insufficient ? prev.value : null;
     }
     const { insufficient: _, ...rest } = cur;
     return { id, status: "OK", previous, ...rest };
   } catch (e) {
+    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, ...empty };
     logError("indicator", id, e);
     return { ...unavailable(id, "ERROR"), ...empty };
   }
@@ -47,6 +50,7 @@ export async function resolveChart(id: string, f: Filters, db: DbState): Promise
   try {
     return { id, status: "OK", ...(await impl(f)) };
   } catch (e) {
+    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, ...empty };
     logError("chart", id, e);
     return { ...unavailable(id, "ERROR"), ...empty };
   }
@@ -60,6 +64,7 @@ export async function resolveTable(id: string, f: Filters, p: Page, db: DbState)
   try {
     return { id, status: "OK", ...p, ...(await impl(f, p)) };
   } catch (e) {
+    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, ...empty };
     logError("table", id, e);
     return { ...unavailable(id, "ERROR"), ...empty };
   }
@@ -73,6 +78,7 @@ export async function resolveRecords(id: string, f: Filters, p: Page, db: DbStat
   try {
     return { id, status: "OK", ...p, ...(await impl(f, p)) };
   } catch (e) {
+    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, ...empty };
     logError("records", id, e);
     return { ...unavailable(id, "ERROR"), ...empty };
   }
@@ -96,14 +102,15 @@ export async function resolveModule(m: ModuleDef, f: Filters, allow: { indicator
   };
 }
 
-export async function resolveDimension(dim: Dimension): Promise<DimensionResult> {
+export async function resolveDimension(dim: Dimension, f: Filters): Promise<DimensionResult> {
   const { state } = await dbState();
   if (state !== "CONNECTED") return { status: "DATABASE_UNAVAILABLE", reason: REASONS.DATABASE_UNAVAILABLE, options: [] };
   const impl = dimensionImpls[dim];
   if (!impl) return { status: "NOT_IMPLEMENTED", reason: REASONS.NOT_IMPLEMENTED, options: [] };
   try {
-    return { status: "OK", options: await impl() };
+    return { status: "OK", reason: "IDs com apontamentos válidos no período/escopo; limite de 500 opções. Nomes não são inferidos.", options: await impl(f) };
   } catch (e) {
+    if (e instanceof SourceLimitation) return { status: "INSUFFICIENT_DATA", reason: e.message, options: [] };
     logError("dimension", dim, e);
     return { status: "ERROR", reason: REASONS.ERROR, options: [] };
   }

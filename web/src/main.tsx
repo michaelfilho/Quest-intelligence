@@ -27,6 +27,8 @@ const client: QueryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 60000,
+      refetchInterval: 60000,
+      refetchIntervalInBackground: false,
       refetchOnWindowFocus: false,
       retry: (n, e) => !(e instanceof ApiError && e.status >= 400 && e.status < 500) && n < 1,
     },
@@ -57,7 +59,7 @@ const router = createBrowserRouter([
       },
     ],
   },
-]);
+], { basename: import.meta.env.BASE_URL.replace(/\/$/, "") || "/" });
 
 /** Sem sessão → login. Senha temporária → troca obrigatória. Depois, o sistema. */
 function Gate() {

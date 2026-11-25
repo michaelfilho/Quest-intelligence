@@ -10,6 +10,7 @@ import { allowedColumns, chartAllowed, indicatorAllowed, moduleAllowed, scopeFil
 import { dbState, q, SCHEMAS } from "./db.js";
 import { filtersSchema, pageSchema } from "./filters.js";
 import { reportsRouter } from "./reports.js";
+import { runtimeSchema, mappingCapabilities } from "./schema.js";
 import { resolveDimension, resolveIndicator, resolveModule, resolveRecords, resolveTable } from "./services.js";
 
 class HttpError extends Error {
@@ -29,7 +30,7 @@ const h = (fn: (req: Request, res: Response) => Promise<unknown>) => (req: Reque
 const forbidden = () => new HttpError(403, "Você não tem permissão para acessar este conteúdo.", undefined);
 
 // Opções de filtro também revelam dados (nomes de clientes etc.).
-const DIMENSION_PERMISSION: Partial<Record<Dimension, Permission>> = { clients: "clientes.view", groups: "clientes.view", projects: "projetos.view", departments: "departamentos.view", employees: "departamentos.view" };
+const DIMENSION_PERMISSION: Partial<Record<Dimension, Permission>> = { clients: "clientes.view", groups: "clientes.view", projects: "projetos.view", departments: "departamentos.view", employees: "departamentos.view", statuses: "projetos.view", services: "producao.view" };
 
 export function createApp() {
   const app = express();
@@ -113,12 +114,20 @@ export function createApp() {
     if (!DIMENSIONS.includes(dim)) throw new HttpError(404, "Dimensão inexistente");
     const need = DIMENSION_PERMISSION[dim];
     if (need && !can(req, need)) throw forbidden();
-    res.json(await resolveDimension(dim));
+    res.json(await resolveDimension(dim, scopeFilters(req.user!, parse(filtersSchema, req.query))));
   }));
 
   app.use("/api/reports", reportsRouter());
 
   // Cobertura: tabelas reais dos schemas autorizados (catálogo do PostgreSQL, sem full scan).
+  app.get("/api/metadata/schema", h(async (req, res) => {
+    if (!can(req, "config.view")) throw forbidden();
+    const db = await dbState();
+    if (db.state !== "CONNECTED") return res.json({ database: db.state, columns: [], constraints: [], capabilities: null });
+    const snapshot = await runtimeSchema();
+    res.json({ database: db.state, ...snapshot, capabilities: mappingCapabilities(snapshot) });
+  }));
+
   app.get("/api/metadata/coverage", h(async (req, res) => {
     if (!can(req, "config.view") && !can(req, "qualidade.view")) throw forbidden();
     const db = await dbState();

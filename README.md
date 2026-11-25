@@ -2,7 +2,7 @@
 
 Plataforma de inteligência econômica, financeira e operacional da Quest Comunicação. Lê o PostgreSQL `quest_rinne` (schemas `core`, `ingest`, `audit`) **somente para leitura** e apresenta indicadores rastreáveis, calculados de forma determinística.
 
-> **Estado:** a aplicação roda por completo localmente **sem o banco**. Os indicadores aparecem como "Sem conexão com o banco" ou "Aguardando mapeamento", nunca como zero nem com valores simulados. Os cálculos SQL dependem da inspeção do schema real na etapa de deploy ([docs/INTEGRACAO_POSTGRESQL.md](docs/INTEGRACAO_POSTGRESQL.md)).
+> **Integração:** o backend usa a conexão existente e descobre colunas, tipos e constraints em tempo de execução. Há 29 indicadores com SQL, 7 gráficos e 10 tabelas mapeados, condicionados à introspecção. Resultados permanecem parciais ou em reconciliação até a validação real. Outros 40 indicadores têm motivos explícitos de indisponibilidade. Não há cópia do banco analítico nem zeros ou dados simulados para preencher ausências. [Integração e limitações](docs/INTEGRACAO_POSTGRESQL.md).
 
 **Módulos:** Visão geral · Clientes · Projetos / Jobs · Rentabilidade · Financeiro · Timesheet · Departamentos · Colaboradores · Produtividade · Produção · Contratos · Capacidade operacional · Eficiência · Contratado × executado · Qualidade dos dados · Relatórios (PDF, CSV, XLSX, Markdown) · Configurações (usuários, perfis, IP, sessões, auditoria, segurança).
 
@@ -33,5 +33,7 @@ docs/     documentação
 ```
 
 ## Documentação
+
+[Diagnóstico desta integração](docs/DIAGNOSTICO_INTEGRACAO.md): inventário, consultas implementadas, testes, limitações e roteiro de atualização da instalação existente.
 
 [Instalação local](docs/INSTALACAO_LOCAL.md) · [Arquitetura](docs/ARQUITETURA.md) · [Segurança](docs/SEGURANCA.md) · [API](docs/API.md) · [Integração PostgreSQL](docs/INTEGRACAO_POSTGRESQL.md) · [Dicionário de indicadores](docs/DICIONARIO_INDICADORES.md) · [Testes](docs/TESTES.md) · [Homologação local](docs/HOMOLOGACAO_LOCAL.md) · [Deploy na VPS](docs/DEPLOY_VPS.md) · [Backup e rollback](docs/BACKUP_ROLLBACK.md) · [Pendências de produção](docs/PENDENCIAS_PRODUCAO.md)

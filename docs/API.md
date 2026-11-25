@@ -2,6 +2,14 @@
 
 Base: `/api`. Respostas JSON, exceto os downloads.
 
+Na publicação em `/core/`, o navegador usa `/core/api`; o Traefik remove `/core`, e a API continua recebendo `/api`. `APP_BASE_PATH=/core/` isola o cookie; login e logout usam o mesmo Path, mantendo Secure/HttpOnly/SameSite. Localmente a base padrão é `/`.
+
+`GET /metadata/schema` exige `config.view` e retorna a estrutura descoberta em runtime, constraints e capacidades, sem registros individuais. A estrutura tem cache em memória de cinco minutos; dados analíticos são lidos diretamente a cada consulta.
+
+Itens mapeados podem retornar `INSUFFICIENT_DATA` quando a introspecção não comprova campos/tipos ou o filtro não tem vínculo confiável. `PARCIAL` e `EM_RECONCILIACAO` não equivalem a números gerenciais certificados. Indicadores incluem `temporalField`, `coverage`, `reason`, registros considerados/excluídos e atualização quando disponível. Fotografias atuais não fornecem `previous` histórico.
+
+Dimensões recebem os filtros globais e o escopo departamental imposto, retornando até 500 IDs com apontamentos válidos. Status é literal e exige `projetos.view`; nomes e serviços sem vínculo comprovado não são inferidos. Relatórios reutilizam as mesmas consultas e preservam os motivos individuais de indisponibilidade.
+
 **Cadeia aplicada a toda rota:** (1) allowlist de IP → (2) sessão (cookie `rinne_sid`) → (3) CSRF (métodos de escrita exigem `X-Requested-With: rinne` e `Origin` igual ao host) → (4) permissão da rota.
 
 Erros: `400` dados inválidos (`details: [{campo, erro}]`) · `401` sem sessão (`code: UNAUTHENTICATED`) · `403` sem permissão, troca de senha pendente (`PASSWORD_CHANGE_REQUIRED`) ou CSRF · `404` · `409` conflito · `413` corpo grande · `429` limite · `500` erro interno (sem detalhes).

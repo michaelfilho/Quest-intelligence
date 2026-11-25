@@ -2,23 +2,14 @@
 // Uso: npm run introspect
 import { writeFileSync } from "node:fs";
 import { closePool, getPool, q, SCHEMAS } from "./db.js";
+import { discoverSchema } from "./schema.js";
 
 if (!getPool()) throw new Error("DATABASE_URL não configurado (veja .env.example)");
 
 const schemas = Object.values(SCHEMAS);
 const ident = (s: string) => '"' + s.replace(/"/g, '""') + '"';
 
-const columns = await q<{ schema: string; table: string; column: string; type: string; nullable: string }>(
-  `select table_schema as schema, table_name as table, column_name as column, data_type as type, is_nullable as nullable
-     from information_schema.columns where table_schema = any($1) order by 1, 2, ordinal_position`,
-  [schemas]
-);
-const constraints = await q<{ schema: string; table: string; name: string; type: string; def: string }>(
-  `select n.nspname as schema, c.relname as table, k.conname as name, k.contype as type, pg_get_constraintdef(k.oid) as def
-     from pg_constraint k join pg_class c on c.oid = k.conrelid join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = any($1) and k.contype in ('p','f','u') order by 1, 2, 4`,
-  [schemas]
-);
+const { columns, constraints } = await discoverSchema();
 const indexes = await q(`select schemaname as schema, tablename as table, indexname as name, indexdef as def
                            from pg_indexes where schemaname = any($1) order by 1, 2`, [schemas]);
 const relations = await q<{ schema: string; table: string; kind: string }>(

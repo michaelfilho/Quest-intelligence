@@ -72,7 +72,7 @@ export async function buildReport(u: SessionUser, d: ReportDef, f: Filters) {
   for (const i of r.indicators) {
     if (i.status === "FORBIDDEN") continue;
     const def = INDICATORS[i.id];
-    indicators.push({ id: i.id, label: def.label, unit: def.unit, basis: def.basis, formula: def.formula, sources: def.sources, status: i.status, value: i.value, previous: i.previous, reliability: i.reliability, reason: i.reason ?? null, recordsUsed: i.recordsUsed ?? null, recordsExcluded: i.recordsExcluded ?? null, updatedAt: i.updatedAt ?? null });
+    indicators.push({ id: i.id, label: def.label, unit: def.unit, basis: def.basis, formula: def.formula, sources: def.sources, status: i.status, value: i.value, previous: i.previous, reliability: i.reliability, reason: i.reason ?? null, recordsUsed: i.recordsUsed ?? null, recordsExcluded: i.recordsExcluded ?? null, updatedAt: i.updatedAt ?? null, temporalField: i.temporalField ?? null, coverage: i.coverage ?? null });
   }
   for (const t of d.tables ?? []) {
     if (!tableAllowed(u, t)) continue;
@@ -83,7 +83,8 @@ export async function buildReport(u: SessionUser, d: ReportDef, f: Filters) {
   const dataAvailable = indicators.some((i) => i.status === "OK");
   const limitations = [
     ...(state !== "CONNECTED" ? ["Banco de dados indisponível: este relatório NÃO contém valores calculados."] : []),
-    ...(indicators.some((i) => i.status === "NOT_IMPLEMENTED") ? ["Indicadores aguardando o mapeamento do schema real do PostgreSQL."] : []),
+    ...(indicators.some((i) => i.status === "NOT_IMPLEMENTED" || i.status === "INSUFFICIENT_DATA") ? ["Há indicadores sem fonte, vínculo ou semântica gerencial suficiente; observe o motivo individual."] : []),
+    ...indicators.filter(i => i.reason).map(i => `${i.label}: ${i.reason}`),
     "Dados do CORE podem conter divergências históricas da API iClips e conflitos financeiros em auditoria; observe a confiabilidade de cada indicador.",
     "Ausência de informação não equivale a zero. Bases temporais (faturamento, caixa, competência) não são somadas entre si.",
   ];

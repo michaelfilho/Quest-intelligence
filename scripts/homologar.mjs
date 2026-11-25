@@ -10,10 +10,11 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'rinne-homolog-'));
 const apiPort = Number(process.env.HOMOLOG_API_PORT ?? 3334);
 const webPort = Number(process.env.HOMOLOG_WEB_PORT ?? 4174);
+const basePath = process.env.VITE_BASE_PATH ?? '/';
 const env = { ...process.env, NODE_ENV: 'test', DATABASE_URL: '', DATA_DIR: dir,
   IP_ALLOWLIST_FILE: join(dir, 'ip-allowlist.json'), IP_ALLOWLIST_BOOTSTRAP: '',
   REQUIRE_PROXY: 'false', TRUST_PROXY: 'loopback', COOKIE_SECURE: 'false',
-  PORT: String(apiPort), HOST: '127.0.0.1', RINNE_API_TARGET: `http://127.0.0.1:${apiPort}` };
+  PORT: String(apiPort), HOST: '127.0.0.1', APP_BASE_PATH: basePath, RINNE_API_TARGET: `http://127.0.0.1:${apiPort}` };
 const children = [];
 function run(args, options = {}) {
   return spawn(process.execPath, args, { cwd: root, env, windowsHide: true, ...options });
@@ -39,7 +40,7 @@ try {
     const p = run(args, { cwd: name === 'web' ? join(root, 'web') : root, stdio: ['ignore', log, log] });
     children.push(p);
   }
-  const base = `http://127.0.0.1:${webPort}`;
+  const base = `http://127.0.0.1:${webPort}${basePath === '/' ? '' : basePath.replace(/\/$/, '')}`;
   let ready = false;
   for (let i = 0; i < 100; i++) {
     if (children.some(p => p.exitCode !== null)) throw new Error(`serviço encerrou; logs: ${dir}`);

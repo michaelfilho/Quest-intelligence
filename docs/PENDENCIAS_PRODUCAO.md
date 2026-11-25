@@ -1,30 +1,19 @@
-# Pendências para produção
+# Pendências de integração e produção
 
-Ficam pendentes apenas as atividades que exigem o PostgreSQL real ou a infraestrutura de produção.
+A produção foi informada como conectada a `quest_rinne` pela role somente leitura. Não foi acessada nesta tarefa. A nova integração precisa ser atualizada e validada no ambiente existente.
 
-| # | pendência | depende de | referência |
-|---|---|---|---|
-| 1 | Conectar ao PostgreSQL real (túnel/rede + role somente leitura aprovada) | VPS, aprovação | [DEPLOY_VPS.md](DEPLOY_VPS.md) |
-| 2 | Inspecionar o schema verdadeiro (`npm run introspect`) | 1 | [INTEGRACAO_POSTGRESQL.md](INTEGRACAO_POSTGRESQL.md) |
-| 3 | Implementar os mapeamentos SQL (`server/src/mappings.ts`) | 2 | idem |
-| 4 | Alimentar os indicadores com dados reais | 3 | — |
-| 5 | Validar cálculos financeiros e operacionais contra SQL independente | 4 | [TESTES.md](TESTES.md) |
-| 6 | Investigar os 166 lançamentos de dez/2026, os conflitos em `audit` e as tarefas reenfileiradas | 2 | [INTEGRACAO_POSTGRESQL.md](INTEGRACAO_POSTGRESQL.md) |
-| 7 | Validar a leitura das sincronizações existentes (QPF-00, `ingest`, `audit`) na tela Qualidade dos dados | 2 | idem |
-| 8 | Validar os containers Docker (build e execução reais) | VPS / Docker | [DEPLOY_VPS.md](DEPLOY_VPS.md) |
-| 9 | HTTPS, proxy reverso, `REAL_IP_FROM`/`TRUST_PROXY` e cabeçalhos efetivos | VPS | [SEGURANCA.md](SEGURANCA.md) |
-| 10 | Homologar o bloqueio por IP (de dentro e de fora da lista) | 9 | [SEGURANCA.md](SEGURANCA.md) |
-| 11 | Executar o deploy | aprovação | [DEPLOY_VPS.md](DEPLOY_VPS.md) |
-| 12 | Homologar a produção | 11 | [HOMOLOGACAO_LOCAL.md](HOMOLOGACAO_LOCAL.md) |
+- Conferir `/api/metadata/schema` com permissão administrativa: campos, tipos, constraints e capacidades reais.
+- Homologar 29 indicadores com SQL condicional, 7 gráficos e 10 tabelas contra dados reais; são parciais ou em reconciliação.
+- Conciliar duplicidades econômicas, sinais, transferências, estornos, retenções, parcelas e pagamentos parciais. Sem FK de vínculo-pai reconhecida, movimentos permanecem indisponíveis.
+- Mapear a identidade e os estados dos conflitos para excluir versões antigas conflitantes. Movimentos preliminares são sinalizados como não conciliados.
+- Validar cobertura por intervalos completos e publicações efetivas, tarefas sobrepostas e publicações posteriores. Contagem de tarefas não é cobertura.
+- Verificar sobreposição WORKFLOW/TASK, duração, custos preenchidos e atribuição temporal dos apontamentos.
+- Definir status de conclusão/atraso, critério de entrega, estimativas compatíveis e distinção entre esforço produtivo e demais horas.
+- Fornecer fonte contratual real, jornadas/capacidade, metodologia de custo completo, classificação de custos e critérios de rateio. Orçamento de job não é contrato.
+- Validar documento unívoco para ligar notas a clientes; não usar nomes.
+- Conferir IDs dos escopos departamentais, sem atribuir departamento atual a todo histórico.
+- Validar Docker, TLS, Traefik com strip de `/core`, cookie Path `/core/`, proxy confiável, volumes e backup/restauração.
 
-## Decisões que dependem da Quest (sem elas os indicadores ficam "DADOS INSUFICIENTES")
+Os 40 indicadores sem SQL disponível têm motivo individual no [dicionário](DICIONARIO_INDICADORES.md). Conectar o banco não resolve ausência de fonte ou semântica gerencial.
 
-- Metodologia de custo/hora por colaborador (custos de pessoal e mão de obra).
-- Critério oficial de "entrega".
-- Fonte de jornada e capacidade dos colaboradores.
-- Estrutura de contratos e escopos (contratado × executado).
-- Classificação de custos diretos, indiretos e variáveis (margem de contribuição).
-
-## Evolução futura (fora da 1.0)
-
-IA, voz e Modo reunião. Código arquivado na branch `archive/ia-voz-reuniao`.
+Não houve deploy, push, acesso SSH, alteração de banco, migração analítica ou alteração do n8n nesta execução.

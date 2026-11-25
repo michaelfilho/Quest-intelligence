@@ -10,5 +10,6 @@
     "build": "npm --prefix server run typecheck && npm --prefix web run build",
     "docs:indicators": "npm --prefix server run docs:indicators",
     "homologacao": "npm run build && node scripts/homologar.mjs"
-  }
+  },
+  "type": "module"
 }

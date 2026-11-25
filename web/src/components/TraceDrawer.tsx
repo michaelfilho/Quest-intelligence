@@ -90,6 +90,8 @@ export function TraceDrawer({ id, filters, onClose }: { id: string; filters: Fil
                 ))}
               </Row>
               <Row label="Última atualização">{r.updatedAt ? fmt(r.updatedAt, "datetime") : "—"}</Row>
+              {r.temporalField && <Row label="Campo temporal">{r.temporalField}</Row>}
+              {r.coverage && <Row label="Cobertura">{r.coverage}</Row>}
               <Row label="Banco">{DB_LABEL[d.database]}</Row>
             </dl>
             <DataTable def={{ id: `records-${id}`, label: "Registros de origem" }} endpoint={`/indicators/${id}/records`} filters={filters} />

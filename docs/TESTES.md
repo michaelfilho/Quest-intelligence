@@ -1,16 +1,22 @@
-# Testes
+# Testes da integração
 
-| camada | comando | quantidade | cobre |
-|---|---|---|---|
-| API (node:test) | `npm --prefix server test` | **45** em 6 arquivos | autenticação, autorização por perfil/coluna/escopo, bloqueio por IP e falsificação de cabeçalhos, endpoints, filtros, paginação, relatórios (CSV/XLSX/MD), estados sem PostgreSQL, migrations |
-| Interface (vitest) | `npm --prefix web test` | **12** | menu por perfil, colunas sensíveis, bloqueio de câmera/microfone/localização no nginx, formatação pt-BR |
-| Tipos | `npm run typecheck` | server + web | — |
-| Build | `npm run build` | web | bundle de produção |
-| Dependências | `npm --prefix server audit` · `npm --prefix web audit` | — | não garante ausência de falhas |
-| Ponta a ponta | `npm run homologacao` | ver [HOMOLOGACAO_LOCAL.md](HOMOLOGACAO_LOCAL.md) | Playwright + Edge, **build de produção**, banco da aplicação temporário |
+| Verificação | Resultado local |
+|---|---|
+| `npm test` | 66 backend + 14 interface aprovados |
+| `npm run typecheck` | server e web aprovados |
+| `npm run build` | build de produção aprovado |
+| `npm run homologacao` | 35 verificações Playwright/Edge na raiz |
+| `VITE_BASE_PATH=/core/ npm run homologacao` | 35 verificações com prefixo público e cookie em `/core/` |
+| Auditorias de raiz/server/web/e2e | sem vulnerabilidades reportadas na entrega |
 
-Os testes da API sobem a API real com um SQLite temporário, **sem PostgreSQL e sem serviços externos**. Usuários e senhas dos testes são fixtures que só existem neles.
+Em PowerShell: `$env:VITE_BASE_PATH='/core/'; npm run homologacao`; depois restaure a variável para builds na raiz.
 
-## O que ainda não é testável localmente
+Testes preservam autenticação, CSRF, IPs, sessões, permissões, escopo e exportações. A API usa SQLite descartável apenas para autenticação; SQL analítico roda em PostgreSQL embarcado PGlite com fixtures sintéticas em memória. SQLite não valida sintaxe PostgreSQL.
 
-Cálculos com dados reais, o PostgreSQL de produção, o nginx em execução (só os arquivos de configuração são testados) e os containers Docker. Ver [PENDENCIAS_PRODUCAO.md](PENDENCIAS_PRODUCAO.md).
+`analytics.test.ts`, `analytics-api.test.ts` e `schema-profile.test.ts` verificam introspecção, tipos incompatíveis, joins sem multiplicação, fallback de durações, retrabalho, custo registrado, nulos e sinais, notas canceladas, datas futuras, timezone, fronteiras semiabertas, registros reconciliando cards, paginação vazia, filtros incompatíveis, escopo em dimensões/detalhes/relatórios, perfis financeiros ambíguos e famílias pai/filho. Fotografias atuais não fabricam comparação histórica.
+
+Os testes HTTP usam a API real; somente o transporte `pg` é substituído pelo motor PostgreSQL em memória. Não há fixtures nem dados simulados nos mapeamentos da aplicação em produção.
+
+O E2E cobre login, senha obrigatória, logout, navegação, relatórios/downloads, impressão, perfis, filtros, ausência do banco e responsividade. Evidências locais em `e2e/output/`, ignoradas pelo Git. Não comprova números reais, nginx/Traefik ou Docker em execução.
+
+Após atualização, executar manualmente o verificador somente leitura de [INTEGRACAO_POSTGRESQL.md](INTEGRACAO_POSTGRESQL.md) e reconciliar os domínios. Nenhum teste acessou produção.

@@ -1,6 +1,7 @@
 # Build a partir da RAIZ do projeto (precisa de ../shared):  docker build -f server/Dockerfile .
 FROM node:24-alpine
 WORKDIR /app
+COPY package.json ./
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3333
 COPY server/package.json server/package-lock.json server/
 RUN cd server && npm ci --omit=dev && npm cache clean --force

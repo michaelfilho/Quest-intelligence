@@ -1,5 +1,19 @@
 # Deploy na VPS
 
+## Atualização da instalação existente
+
+Produção informada pelo responsável: fonte em `/opt/apps/quest-rinne-web`, execução em `/opt/apps/quest-rinne-web-runtime`, projeto Docker `quest-rinne-web`, frontend na porta 18372 e PostgreSQL na rede `quest-rinne_private`. Estas informações não foram verificadas por acesso remoto nesta tarefa.
+
+1. Publicar o commit local somente após autorização e usar a rotina existente para atualizar a fonte e a cópia de execução. Não executar `git reset`, limpeza ou cópia de diretórios que substitua SQLite, arquivo de ambiente, allowlist, credenciais ou volumes.
+2. Antes da atualização, identificar os arquivos Compose/env efetivamente usados pelo projeto existente e fazer backup consistente e verificável do SQLite e configurações. Não assumir que os exemplos abaixo representam a configuração já adaptada na VPS.
+3. Preservar a `DATABASE_URL`/role e a rede já existentes. Não criar PostgreSQL, publicar 5432 ou reexecutar criação de role. Preservar a porta 18372, o proxy e os volumes efetivos.
+4. Para o frontend usar build arg `VITE_BASE_PATH=/core/`; na API, `APP_BASE_PATH=/core/`. No Compose versionado, `PUBLIC_BASE_PATH=/core/` alimenta ambos. O Traefik remove `/core` antes de encaminhar ao nginx; não adicionar outro strip nem `proxy_cookie_path`.
+5. Reconstruir apenas os serviços da aplicação pela configuração existente, preservando dados. Não usar `down -v`, remover volumes ou aplicar scripts SQL analíticos. Os arquivos de teste e o PGlite são dependências de desenvolvimento, sem uso na imagem da API.
+6. Validar `/core/`, assets, login/logout, cookie Path `/core/`, downloads, impressão, permissões e `/core/api/metadata/schema`. Consultar os motivos dos mapeamentos indisponíveis e executar o verificador somente leitura da [integração](INTEGRACAO_POSTGRESQL.md).
+7. Reconciliar números reais por domínio e registrar evidências antes de declarar homologação. Se falhar, usar o rollback existente com o backup anterior, sem trocar a role ou o PostgreSQL.
+
+Nenhum desses passos foi executado nesta tarefa. O commit está preparado localmente; não houve push nem deploy. As seções seguintes são referência para instalação/configuração, não uma ordem para recriar a infraestrutura em funcionamento.
+
 > **Nada deste documento foi executado.** Docker não existe na máquina de desenvolvimento, então as imagens e os compose **não foram homologados com execução real**. Cada passo que toca produção exige aprovação explícita. O deploy não deve interferir nos demais sistemas da Quest hospedados na VPS.
 
 ## 0. Pré-requisitos

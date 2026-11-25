@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { isPermission, type Permission } from "../../shared/permissions.js";
+import { normalizeBasePath } from "../../shared/base-path.js";
 import { dummyHash, hashPassword, passwordProblem, verifyPassword } from "./passwords.js";
 import { audit, getSetting, now, store } from "./store.js";
 
@@ -47,7 +48,7 @@ function readCookie(req: Request, name: string) {
 }
 
 function setSessionCookie(res: Response, token: string | null, maxAgeSec: number) {
-  const parts = [`${COOKIE}=${token ?? ""}`, "Path=/", "HttpOnly", "SameSite=Strict", `Max-Age=${token ? maxAgeSec : 0}`];
+  const parts = [`${COOKIE}=${token ?? ""}`, `Path=${normalizeBasePath(process.env.APP_BASE_PATH ?? "/")}`, "HttpOnly", "SameSite=Strict", `Max-Age=${token ? maxAgeSec : 0}`];
   if (secureCookie()) parts.push("Secure");
   res.append("Set-Cookie", parts.join("; "));
 }

@@ -20,7 +20,8 @@ const field = "flex flex-col gap-1.5 text-[10px] font-semibold uppercase trackin
 const input = "h-10 rounded-lg border border-q-line bg-white px-3 text-sm font-normal normal-case tracking-normal text-q-ink hover:border-q-mid focus:border-q-orange focus:outline-none";
 
 function DimSelect({ dim, label, value, onChange }: { dim: Dimension; label: string; value?: string; onChange: (v?: string) => void }) {
-  const q = useQuery({ queryKey: ["dim", dim], queryFn: () => api<DimensionResult>(`/dimensions/${dim}`), staleTime: 5 * 60000 });
+  const { filters } = useFilters();
+  const q = useQuery({ queryKey: ["dim", dim, filters], queryFn: () => api<DimensionResult>(`/dimensions/${dim}`, { ...filters, compare: undefined }), staleTime: 60000 });
   const options = q.data?.options ?? [];
   const disabled = !options.length && !value;
   return (

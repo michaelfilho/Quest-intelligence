@@ -1,50 +1,51 @@
-# Integração com o PostgreSQL `quest_rinne`
+# Integração PostgreSQL em tempo de execução
 
-Estado: **não conectado**. Toda a aplicação funciona sem o banco, mostrando `DATABASE_UNAVAILABLE` e nunca valores. Os cálculos só serão escritos depois de inspecionar o schema real.
+O backend usa a conexão existente (`pg`, role somente leitura), sem copiar dados para SQLite, modificar o PostgreSQL ou chamar iClips/n8n. Nenhuma conexão a produção foi realizada nesta tarefa.
 
-## Princípios
+## Introspecção e mapeamentos
 
-- Fonte oficial: `core` (consumo), `ingest` (coletas) e `audit` (conflitos e rastreabilidade).
-- **Somente leitura**, em três camadas:
-  1. a role `quest_rinne_app_ro` só tem SELECT ([sql/001_create_readonly_role.sql](../sql/001_create_readonly_role.sql));
-  2. a sessão abre com `default_transaction_read_only=on`;
-  3. a API não tem rotas de escrita no banco analítico.
-- A API recusa `DATABASE_URL` que não seja `postgres://…/quest_rinne` ou que use o usuário `postgres`.
-- `statement_timeout` de 15 s, pool de 10 conexões e SQL sempre parametrizado.
-- Usuários, perfis, sessões, auditoria e configurações ficam no **SQLite da aplicação**, isolado do banco analítico.
+`server/src/schema.ts` reutiliza a descoberta do CLI `introspect`: `information_schema.columns` e `pg_constraint`, nos schemas autorizados. A estrutura permanece somente em memória por cinco minutos; requisições simultâneas compartilham a descoberta. Não há dependência de arquivos de levantamento.
 
-## Passo a passo (na fase de deploy)
+`GET /api/metadata/schema` exige `config.view` e retorna colunas, tipos, constraints e capacidades, sem dados individuais. Relações declaradas no contrato são distintas das foreign keys encontradas. A presença das colunas não comprova integridade referencial.
 
-1. Criar a role somente leitura (com aprovação): ver [DEPLOY_VPS.md](DEPLOY_VPS.md#1-role-somente-leitura).
-2. Conectar por túnel SSH e preencher `DATABASE_URL` no `.env` local.
-3. `npm --prefix server run introspect` gera `docs/DICIONARIO_DADOS.md` e `docs/schema-snapshot.json` (colunas, chaves, índices, funções com md5, contagens e faixas de datas).
-4. Implementar os mapeamentos em [server/src/mappings.ts](../server/src/mappings.ts), **um indicador por vez**:
-   - `indicatorImpls[id].compute(f)` → `{ value, recordsUsed, recordsExcluded, exclusions, updatedAt, reliability }`;
-   - `indicatorImpls[id].records(f, page)` → registros de origem (drill-down);
-   - `chartImpls`, `tableImpls` (respeitando `page.sort`/`page.dir`, já validados) e `dimensionImpls`.
-5. Comparar cada total com uma consulta SQL independente e registrar o resultado em [HOMOLOGACAO_LOCAL.md](HOMOLOGACAO_LOCAL.md) (seção produção).
-6. `npm run docs:indicators` atualiza a coluna "situação" do dicionário.
+As consultas de `analytics.ts`, `cash.ts`, `quality.ts` e `registry-counts.ts` são registradas em `mappings.ts`. Nomes e tipos são validados antes do SQL; campos ausentes/incompatíveis geram `INSUFFICIENT_DATA`. Duplicidades de `jobs.iclips_id` bloqueiam joins que multiplicariam horas. Identificadores SQL vêm de listas fechadas; valores dos filtros são parâmetros.
 
-Nada mais precisa mudar: telas e relatórios usam as mesmas funções.
+## Políticas de cálculo
 
-## Regras de confiabilidade a implementar nos mapeamentos
-
-| estado | quando usar |
+| Domínio | Regra |
 |---|---|
-| `VALIDADO` | fonte completa, sem conflitos em aberto no período |
-| `PARCIAL` | parte dos registros excluída (informe `exclusions`) |
-| `DESATUALIZADO` | coleta sem sincronização recente além do esperado |
-| `PENDENTE` | coletas pendentes no período (`ingest`) |
-| `EM_RECONCILIACAO` | conflitos em `audit` ou tarefas em reconciliação que afetam o período |
-| `INDISPONIVEL` | não calculável |
+| Notas | `issued` por `issued_at`; competência separada por `competence_date`. Canceladas, valores nulos/não finitos e datas futuras são excluídos. Sinais preservados; nomes não vinculam clientes. |
+| Horas | Atribuição integral a `started_at` em America/Sao_Paulo; segundos não negativos e consistentes com minutos dentro de 1 segundo. Minutos são fallback só quando segundos são nulos. Não somar durações. |
+| Fronteiras | Início inclusivo e dia seguinte ao fim exclusivo. Apontamentos atravessando fronteiras são integralmente atribuídos ao início. Sem início não há atribuição arbitrária ao período. Término futuro, valores não finitos ou inconsistentes são excluídos. |
+| Retrabalho | Mesma base elegível; `is_rework=true`. Percentual = duração de retrabalho / duração total válida. |
+| Custo registrado | Apenas `labor_cost` numérico preenchido em apontamentos válidos. Não adiciona horas × taxa nem despesas de pessoal. Custo ausente reduz cobertura; não certifica custo total ou margem. |
+| Clientes | Clientes distintos em jobs com apontamentos válidos, não todos os clientes ativos administrativamente ou com movimentação financeira. Sem vínculo permanece separado. |
+| Projetos | Iniciados por `entered_at`; tempo de calendário preliminar por conclusão informada. Não reconstrói estado histórico nem certifica entrega por status. |
+| Cadastros | Contagens físicas atuais de clientes, pessoas, departamentos, jobs, peças, tarefas e etapas. Sem recorte temporal e sem comparação histórica fabricada. |
+| Movimentações | Perfis explícitos: `amount` e exatamente um campo `entry_type`/`type`. Exige `parent_id`/`parent_entry_id` com FK para o próprio cadastro financeiro. Sem esse contrato fica indisponível. Exclui integralmente famílias pai/filho. |
+| Caixa | Base `payment_date`, sem usar `entry_date` como substituto. Sinais preservados. Saldo indisponível se houver negativos ambíguos. Não certifica transferências, parcelas, estornos, descontos, juros, multas, retenções ou conflitos de publicação. Não é lucro ou receita operacional. |
+| Monitoramento | Fotografia atual de tarefas e estados literais; `updated_at` é atualização da tarefa, não sucesso de coleta. `RECEIVED` não comprova publicação integral. |
 
-- Um registro **não** é confiável só por estar no CORE: considerar as divergências históricas da API iClips e os conflitos financeiros em auditoria.
-- Ausência de informação nunca vira zero.
-- Lançamentos com data futura (ex.: os 166 de dez/2026) não entram como realizados.
+Resultados são `PARCIAL` ou `EM_RECONCILIACAO`, nunca certificados só porque o SQL executou. Cobertura por publicações efetivas, sobreposições WORKFLOW/TASK e conflitos abertos exigem validação real.
 
-## Investigações obrigatórias (herdadas da auditoria de 24/11/2026)
+## Filtros, segurança e atualização
 
-- Os 166 lançamentos de dez/2026: origem e diferença entre previsto e realizado.
-- Hash atual do publicador financeiro, comparado com `e18f80468b341d1ba2e8c1238e4ec05e` (o introspect grava o md5 de cada função).
-- Situação dos conflitos: 66 de centros de custo, 28 de documentos, 94 identificadores e 209 tarefas de projetos.
-- Processamento das 34 tarefas `FIN_ENTRIES_ENTRY` reenfileiradas.
+Cliente/grupo/projeto usam chaves de jobs; horas usam departamento e colaborador do próprio apontamento. Escopo imposto pelo usuário prevalece sobre a URL em cards, dimensões, detalhes e relatórios. Deve conter o ID real do departamento.
+
+Filtros sem relação comprovada geram insuficiência antes da leitura, por exemplo departamento em notas ou serviço em horas. Dimensões retornam IDs com apontamentos no período/escopo, até 500 opções. Campos não comprovados permanecem vazios; não viram zero. Ordenação usa colunas autorizadas e comprovadas.
+
+A interface consulta novamente a cada 60 segundos enquanto ativa; dados novos do n8n aparecem sem importação. A estrutura é revalidada a cada cinco minutos. Cards não necessariamente representam a mesma transação de publicação.
+
+## Validação posterior
+
+Os testes locais usam PostgreSQL embarcado PGlite, exclusivamente em desenvolvimento, com fixtures em memória. A aplicação não contém fallback para essas fixtures. Não certificam valores reais.
+
+No ambiente já atualizado e configurado, executar manualmente:
+
+```bash
+npm run verify:analytics -- --start AAAA-MM-DD --end AAAA-MM-DD
+```
+
+Exige `quest_rinne_app_ro` e sessão somente leitura. Compara o serviço que alimenta a API com SELECTs independentes de faturamento e horas, sem logar valores financeiros. Mudanças concorrentes do n8n podem exigir repetição. Não substitui a homologação de todos os indicadores. Não foi executado em produção nesta tarefa.
+
+Ver [dicionário](DICIONARIO_INDICADORES.md), [testes](TESTES.md) e [pendências](PENDENCIAS_PRODUCAO.md).

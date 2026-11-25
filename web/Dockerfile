@@ -1,6 +1,9 @@
 # Build a partir da RAIZ do projeto (precisa de ../shared):  docker build -f web/Dockerfile .
 FROM node:24-alpine AS build
+ARG VITE_BASE_PATH=/
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
 WORKDIR /app
+COPY package.json ./
 COPY web/package.json web/package-lock.json web/
 RUN cd web && npm ci
 COPY shared shared

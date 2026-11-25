@@ -67,7 +67,7 @@ const desk = await newPage({ width: 1440, height: 900 });
 const p = desk.page;
 
 await check("login: tela de entrada", async () => {
-  await p.goto(BASE);
+  await p.goto(BASE + "/");
   await p.getByRole("heading", { name: "Entrar" }).waitFor();
   await shot(p, "01-login");
 });
@@ -215,7 +215,7 @@ await check("celular 390×844: menu, telas principais e ausência de rolagem hor
 const rest = await newPage({ width: 1440, height: 900 });
 await check("perfil restrito: troca de senha, menu filtrado e bloqueio por padrão", async () => {
   const r = rest.page;
-  await r.goto(BASE);
+  await r.goto(BASE + "/");
   await r.getByLabel("Usuário").fill("analista.homolog");
   await r.getByLabel("Senha").fill(restrictedTemp);
   await r.getByRole("button", { name: "Entrar" }).click();

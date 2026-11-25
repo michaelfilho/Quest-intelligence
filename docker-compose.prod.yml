@@ -18,6 +18,7 @@ services:
       TRUST_PROXY: ${RINNE_WEB_IP:-172.30.57.2}
       REQUIRE_PROXY: "true"
       COOKIE_SECURE: "true"
+      APP_BASE_PATH: ${PUBLIC_BASE_PATH:-/core/}
     networks:
       default: {}
       postgres: {}
@@ -31,7 +32,11 @@ services:
     # Sem "ports": a API só é acessível pelo nginx.
 
   web:
-    build: { context: ., dockerfile: web/Dockerfile }
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_BASE_PATH: ${PUBLIC_BASE_PATH:-/core/}
     depends_on: [api]
     environment:
       API_UPSTREAM: api:3333
