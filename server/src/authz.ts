@@ -22,8 +22,11 @@ export const tableAllowed = (u: SessionUser, id: string) =>
 export const allowedColumns = (u: SessionUser, def: TableDef) => def.columns.filter((c) => has(u, columnPermission(c.key)));
 
 export function stripRows(u: SessionUser, def: TableDef, rows: Record<string, unknown>[]) {
-  const blocked = new Set(def.columns.filter((c) => !has(u, columnPermission(c.key))).map((c) => c.key));
-  return blocked.size ? rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !blocked.has(k)))) : rows;
+  return stripRecordFields(u,rows);
+}
+export function stripRecordFields(u:SessionUser,rows:Record<string,unknown>[]) {
+  // Também protege campos auxiliares e de drill-down que não apareçam no catálogo visual.
+  return rows.map(r => Object.fromEntries(Object.entries(r).filter(([key]) => has(u,columnPermission(key)))));
 }
 
 /** Gestor com escopo de departamento: o filtro de departamento é imposto e não pode ser trocado. */

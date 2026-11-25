@@ -11,7 +11,7 @@ export type Reliability = "VALIDADO" | "PARCIAL" | "DESATUALIZADO" | "PENDENTE" 
 
 /**
  * OK                   — valor calculado a partir do PostgreSQL.
- * NOT_IMPLEMENTED      — aguardando mapeamento do schema real (nenhuma fórmula inventada).
+ * NOT_IMPLEMENTED      — fonte ou critério pendente (nenhuma fórmula inventada).
  * DATABASE_UNAVAILABLE — banco não configurado ou inacessível.
  * INSUFFICIENT_DATA    — consulta mapeada, mas a fonte não permite calcular ("DADOS INSUFICIENTES").
  * ERROR                — falha inesperada na consulta.
@@ -94,6 +94,7 @@ interface ResultBase {
   status: ResultStatus;
   reliability: Reliability;
   reason?: string;
+  reasonCode?: 'MISSING_FIELD'|'INCOMPLETE_REGISTRY'|'INVALID_RELATIONSHIP'|'PARTIAL_COVERAGE'|'BUSINESS_POLICY_PENDING'|'SOURCE_NOT_INTEGRATED'|'NO_RECORDS'|'QUERY_FAILURE';
 }
 
 export interface IndicatorResult extends ResultBase {
@@ -120,6 +121,7 @@ export interface TableResult extends ResultBase {
 }
 
 export interface ModuleResult {
+  entityName?: string;
   module: string;
   generatedAt: string;
   database: DbState;

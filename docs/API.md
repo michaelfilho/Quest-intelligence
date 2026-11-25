@@ -14,6 +14,8 @@ Dimensões recebem os filtros globais e o escopo departamental imposto, retornan
 
 Erros: `400` dados inválidos (`details: [{campo, erro}]`) · `401` sem sessão (`code: UNAUTHENTICATED`) · `403` sem permissão, troca de senha pendente (`PASSWORD_CHANGE_REQUIRED`) ou CSRF · `404` · `409` conflito · `413` corpo grande · `429` limite · `500` erro interno (sem detalhes).
 
+Respostas analíticas indisponíveis podem incluir `reasonCode`: `MISSING_FIELD`, `INCOMPLETE_REGISTRY`, `INVALID_RELATIONSHIP`, `PARTIAL_COVERAGE`, `BUSINESS_POLICY_PENDING`, `SOURCE_NOT_INTEGRATED`, `NO_RECORDS` ou `QUERY_FAILURE`, além do motivo individual. Módulos de detalhe incluem `entityName`, resolvido dentro do período/escopo permitido. Campos de custo exigem `custos_pessoal.view`, inclusive em registros de indicadores e exportações. Novos perfis e consultas estão descritos em [CORRECOES_RELACIONAMENTOS.md](CORRECOES_RELACIONAMENTOS.md).
+
 **Filtros globais** (query): `start`, `end` (AAAA-MM-DD; padrão o mês atual em America/Sao_Paulo), `compare=1`, `client`, `group`, `project`, `department`, `employee`, `service`, `status`. O escopo de departamento do usuário é imposto pelo servidor.
 
 ## Autenticação — `/api/auth`

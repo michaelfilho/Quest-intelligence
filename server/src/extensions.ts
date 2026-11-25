@@ -4,6 +4,7 @@ import { analyticsQuery, runtimeSchema, temporalTypes, type SchemaSnapshot } fro
 import { q } from "./db.js";
 import { SourceLimitation } from "./source-errors.js";
 import type { Computed, Page } from "./mappings.js";
+import { nameSQL } from './presentation.js';
 
 export async function jobChart(kind: "status" | "opened", f: Filters, reader: Query = analyticsQuery) {
   const src = sourceStatement("jobs", f, "entered_at");
@@ -77,7 +78,8 @@ export async function taskTable(f: Filters, p: Page, reader: Query = analyticsQu
   const sort = p.sort ?? "id";
   if (!["id", "projeto", "atividade"].includes(sort)) throw new SourceLimitation("Campo da tarefa sem mapeamento para ordenar.");
   const r = await paginate(`WITH source AS (${src.sql}) SELECT task.job_id::text || ':' || task.iclips_id::text AS id,
-    task.job_id AS projeto_id, task.job_id::text AS projeto, task.iclips_id::text AS atividade FROM core.job_tasks task
+    task.job_id AS projeto_id, ${nameSQL(s,'jobs','iclips_id','task.job_id','Projeto sem nome')} AS projeto,
+    ${s.columns.some(c=>c.schema==='core'&&c.table==='job_tasks'&&c.column==='name')?"coalesce(nullif(btrim(task.name::text),''),'Atividade sem nome')":"'Atividade sem nome'::text"} AS atividade FROM core.job_tasks task
     JOIN source j ON j.iclips_id = task.job_id WHERE j.entered_at::timestamptz <= CURRENT_TIMESTAMP`, src.params, p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"}, id`, reader);
   return { ...r, reason: "Tarefas cadastradas dos projetos abertos no período; não são tarefas comprovadamente executadas no período. Sem atribuir responsável/departamento da tarefa pelo cadastro do job." };
 }

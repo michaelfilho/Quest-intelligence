@@ -1,3 +1,5 @@
+> Registro da revisao publicada anteriormente. A revisao local posterior, ainda sem push/deploy, esta em [CORRECOES_RELACIONAMENTOS.md](CORRECOES_RELACIONAMENTOS.md).
+
 # Revisão final da integração e publicação
 
 Data: 25/11/2026. Revisão local, sem SSH, acesso à VPS, conexão ao PostgreSQL de produção, alteração de n8n ou deploy. O push para a main foi autorizado; o hash remoto verificado é informado na entrega.

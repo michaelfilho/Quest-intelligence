@@ -8,13 +8,24 @@ import { mappingLimitation } from "./mapping-limitations.js";
 
 const REASONS: Record<Exclude<ResultStatus, "OK" | "INSUFFICIENT_DATA">, string> = {
   DATABASE_UNAVAILABLE: "Banco de dados indisponível. Configure DATABASE_URL e verifique a conexão com o PostgreSQL quest_rinne.",
-  NOT_IMPLEMENTED: "Aguardando mapeamento do schema real do PostgreSQL. Nenhuma fórmula é presumida antes da inspeção.",
+  NOT_IMPLEMENTED: "Fonte ou critério ainda não comprovado. Consulte a limitação individual; nenhuma associação é presumida.",
   ERROR: "Falha ao consultar a fonte. Detalhes registrados no log do servidor.",
   FORBIDDEN: "Seu perfil não tem permissão para este item.",
 };
 
-const unavailable = (id: string, status: Exclude<ResultStatus, "OK" | "INSUFFICIENT_DATA">) =>
-  ({ id, status, reliability: "INDISPONIVEL" as const, reason: status === "NOT_IMPLEMENTED" ? mappingLimitation(id) : REASONS[status] });
+export function limitationCode(reason:string):NonNullable<IndicatorResult['reasonCode']> {
+  if (/critério gerencial|classificação|jornadas|capacidade contratada|critério.*entrega|rateio.*aprovad/i.test(reason)) return 'BUSINESS_POLICY_PENDING';
+  if (/campo ausente|coluna .*não encontrada|tipo.*incompatível|timestamp.*não confirmado/i.test(reason)) return 'MISSING_FIELD';
+  if (/cadastro.*nome|cadastro incompleto/i.test(reason)) return 'INCOMPLETE_REGISTRY';
+  if (/vínculo|chave.*duplicad|relacionamento|namespace|órfã|referência/i.test(reason)) return 'INVALID_RELATIONSHIP';
+  if (/cobertura|subconjunto/i.test(reason)) return 'PARTIAL_COVERAGE';
+  if (/nenhum|sem registros|sem tarefas|sem valores|sem timestamp/i.test(reason)) return 'NO_RECORDS';
+  return 'SOURCE_NOT_INTEGRATED';
+}
+const unavailable = (id: string, status: Exclude<ResultStatus, "OK" | "INSUFFICIENT_DATA">) => {
+  const reason=status==='NOT_IMPLEMENTED'?mappingLimitation(id):REASONS[status];
+  return {id,status,reliability:'INDISPONIVEL' as const,reason,reasonCode:status==='ERROR'?'QUERY_FAILURE' as const:limitationCode(reason)};
+};
 
 function logError(scope: string, id: string, e: unknown) {
   console.error(JSON.stringify({ level: "error", scope, id, error: (e as Error).message }));
@@ -27,7 +38,7 @@ export async function resolveIndicator(id: string, f: Filters, db: DbState): Pro
   if (!impl) return { ...unavailable(id, "NOT_IMPLEMENTED"), ...empty };
   try {
     const cur = await impl.compute(f);
-    if (cur.insufficient) return { ...cur, id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: cur.insufficient, ...empty };
+    if (cur.insufficient) return { ...cur, id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: cur.insufficient,reasonCode:limitationCode(cur.insufficient), ...empty };
     let previous: number | null = null;
     if (f.compare && impl.comparable !== false) {
       const prev = await impl.compute({ ...f, ...previousPeriod(f.start, f.end) });
@@ -36,7 +47,7 @@ export async function resolveIndicator(id: string, f: Filters, db: DbState): Pro
     const { insufficient: _, ...rest } = cur;
     return { id, status: "OK", previous, ...rest };
   } catch (e) {
-    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, ...empty };
+    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, reasonCode:limitationCode(e.message), ...empty };
     logError("indicator", id, e);
     return { ...unavailable(id, "ERROR"), ...empty };
   }
@@ -50,7 +61,7 @@ export async function resolveChart(id: string, f: Filters, db: DbState): Promise
   try {
     return { id, status: "OK", ...(await impl(f)) };
   } catch (e) {
-    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, ...empty };
+    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, reasonCode:limitationCode(e.message), ...empty };
     logError("chart", id, e);
     return { ...unavailable(id, "ERROR"), ...empty };
   }
@@ -64,7 +75,7 @@ export async function resolveTable(id: string, f: Filters, p: Page, db: DbState)
   try {
     return { id, status: "OK", ...p, ...(await impl(f, p)) };
   } catch (e) {
-    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, ...empty };
+    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, reasonCode:limitationCode(e.message), ...empty };
     logError("table", id, e);
     return { ...unavailable(id, "ERROR"), ...empty };
   }
@@ -78,7 +89,7 @@ export async function resolveRecords(id: string, f: Filters, p: Page, db: DbStat
   try {
     return { id, status: "OK", ...p, ...(await impl(f, p)) };
   } catch (e) {
-    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, ...empty };
+    if (e instanceof SourceLimitation) return { id, status: "INSUFFICIENT_DATA", reliability: "INDISPONIVEL", reason: e.message, reasonCode:limitationCode(e.message), ...empty };
     logError("records", id, e);
     return { ...unavailable(id, "ERROR"), ...empty };
   }
@@ -93,6 +104,7 @@ export async function resolveModule(m: ModuleDef, f: Filters, allow: { indicator
   ]);
   return {
     module: m.id,
+    ...(m.detailOf ? {entityName:(await dimensionImpls[m.detailOf==='client'?'clients':'projects']?.(f).catch(()=>[]))?.[0]?.label ?? (m.detailOf==='client'?'Cliente sem atividade no per\u00edodo/escopo':'Projeto sem atividade no per\u00edodo/escopo')} : {}),
     generatedAt: new Date().toISOString(),
     database: state,
     filters: f,

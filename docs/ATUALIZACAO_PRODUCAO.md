@@ -26,6 +26,7 @@ Esse passo não faz checkout/reset da fonte, não reinicia containers e não con
 
 - Descobre pelas labels do container API os arquivos Compose, diretório de trabalho e arquivos de ambiente efetivamente usados; não presume que os exemplos do Git sejam iguais aos ajustes do runtime.
 - Captura configurações e inspeções em backup privado, arquiva o runtime e cria uma cópia **consistente** do SQLite da API por `VACUUM INTO`, com checagem de integridade e SHA-256. O arquivo principal lido não é substituído.
+  A cópia sai do container por streaming binário `docker exec`, sem TTY e sem `docker cp`, inclusive quando `/tmp` está em tmpfs. O hash é comparado com o arquivo de origem antes da conclusão. Antes disso, a API existente é verificada internamente: health com PostgreSQL conectado e sessão anônima recusada.
 - Salva `runtime-to-release.private.diff` para revisar diferenças de código, Vite e nginx em relação ao runtime. Mudanças próprias da integração são esperadas; hotfixes locais adicionais precisam ser conciliados antes de atualizar. O script não consegue decidir sozinho quais ajustes locais de código devem ser transportados.
 - Preserva as imagens correntes sob tags de rollback; não remove imagens/volumes nem altera a role ou o banco analítico.
 - Extrai o commit em `runtime/.releases/<identificador>` e produz **um override mínimo**: contexto de build da nova fonte, Dockerfiles versionados, `VITE_BASE_PATH=/core/` e `APP_BASE_PATH=/core/`.
@@ -68,6 +69,16 @@ Esses comandos preservam as referências originais de ambiente e volumes. Não e
 
 ## 4. Validar e acompanhar
 
+Validar primeiro a API internamente, na mesma sessão com `COMPOSE` e `RELEASE` definidos:
+
+```bash
+"${COMPOSE[@]}" -f "$RELEASE/compose.override.json" exec -T api node -e "$(cat "$RELEASE/deploy/check-api.cjs");check().catch(()=>process.exit(1));"
+```
+
+Esse teste usa loopback dentro da API, sem `X-Forwarded-For`, conforme a exceção local já existente para healthchecks. Não desabilita IPs, proxy obrigatório ou autenticação. Exige `database=CONNECTED`, health válido e `/api/auth/me` anônimo retornando 401.
+
+Um HTTP 403 externo isolado **não determina rollback**. Conferir se a allowlist está habilitada e se o bloqueio correspondente consta na auditoria `access.blocked` com motivo `IP fora da allowlist`; validar pelo navegador de um IP autorizado. Somente nessa situação, com a verificação interna aprovada, tratar o 403 daquele IP como bloqueio esperado. Não ignorar outros 403, falhas de sessão, proxy, health, conexão ou assets. Não cadastrar IP automaticamente nem contornar controles para validar a release. Não há rollback automático nesse procedimento.
+
 1. Abrir `https://questos.com.br/core/` e fazer login com conta existente; conferir assets, navegação, filtros, exportações, impressão e logout.
 2. No navegador, confirmar cookie `rinne_sid` com `Path=/core/`, `Secure`, `HttpOnly` e `SameSite=Strict`. Conferir usuário restrito e escopo departamental, incluindo tentativa de URL manipulada.
 3. Com `config.view`, consultar `/core/api/metadata/schema`. “Perfil completo indisponível” não invalida consultas que usam apenas um subconjunto de campos; verificar o motivo individual.
@@ -79,6 +90,8 @@ Esses comandos preservam as referências originais de ambiente e volumes. Não e
 ```
 
 O verificador usa somente SELECTs pela role existente e não registra valores financeiros. Reconciliar também os outros indicadores com seus registros de origem e cobertura. Não declarar rentabilidade validada a partir de movimentação preliminar. Após nova publicação do n8n, verificar atualização das telas analíticas ativas no ciclo de 60 segundos.
+
+O verificador ampliado testa nomes/relacionamentos, horas, faturamento, caixa, estimativas e qualidade pontual. Saída 0: verificações executadas aprovadas; 1: erro/divergência; 2: verificação parcial porque uma fonte/critério permaneceu indisponível. Saída parcial requer revisão dos itens, sem liberar indicadores ausentes nem provocar rollback automático. Se houver publicação concorrente durante a reconciliação, repetir e investigar a divergência antes de concluir. Ver perfis semânticos e limitações em [CORRECOES_RELACIONAMENTOS.md](CORRECOES_RELACIONAMENTOS.md).
 
 ## 5. Rollback de imagens, preservando dados
 

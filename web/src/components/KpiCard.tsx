@@ -31,10 +31,12 @@ export function KpiCard({ def, result, onOpen }: { def: IndicatorDef; result?: I
           <>
             <div className="text-[26px] font-extrabold leading-tight text-q-line">—</div>
             <div className={`text-[11px] font-bold uppercase tracking-wide ${result.status === "INSUFFICIENT_DATA" ? "text-q-orange" : "text-q-mid"}`}>{STATUS_LABEL[result.status]}</div>
+            {result.reason && <p className="mt-1 line-clamp-3 text-xs font-normal normal-case tracking-normal text-q-mid" title={result.reason}>{result.reason}</p>}
           </>
         )}
       </div>
 
+      {ok && result.coverage && <p className="mb-2 line-clamp-2 text-xs font-normal text-q-mid" title={result.coverage}>{result.coverage}</p>}
       <div className="flex items-center gap-2 text-xs text-q-mid">
         {d !== null ? (
           <span className={`num font-semibold ${good === null ? "text-q-mid" : good ? "text-q-ink" : "text-q-orange"}`} title="Variação sobre o período anterior">

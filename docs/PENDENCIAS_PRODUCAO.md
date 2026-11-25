@@ -3,7 +3,7 @@
 A produção foi informada como conectada a `quest_rinne` pela role somente leitura. Não foi acessada nesta tarefa. A nova integração precisa ser atualizada e validada no ambiente existente.
 
 - Conferir `/api/metadata/schema` com permissão administrativa: campos, tipos, constraints e capacidades reais.
-- Homologar 31 indicadores com SQL condicional, 16 gráficos e 14 tabelas contra dados reais; são parciais ou em reconciliação.
+- Homologar 53 indicadores com SQL condicional, 21 gráficos e 17 tabelas contra dados reais; são parciais ou em reconciliação.
 - Conciliar duplicidades econômicas, sinais, transferências, estornos, retenções, parcelas e pagamentos parciais. Movimentos exigem namespace e referências do vínculo-pai validados; FK física não é obrigatória.
 - Mapear a identidade e os estados dos conflitos para excluir versões antigas conflitantes. Movimentos preliminares são sinalizados como não conciliados.
 - Validar cobertura por intervalos completos e publicações efetivas, tarefas sobrepostas e publicações posteriores. Contagem de tarefas não é cobertura.
@@ -14,6 +14,6 @@ A produção foi informada como conectada a `quest_rinne` pela role somente leit
 - Conferir IDs dos escopos departamentais, sem atribuir departamento atual a todo histórico.
 - Validar Docker, TLS, Traefik com strip de `/core`, cookie Path `/core/`, proxy confiável, volumes e backup/restauração.
 
-Os 38 indicadores sem SQL disponível têm motivo individual no [dicionário](DICIONARIO_INDICADORES.md). Conectar o banco não resolve ausência de fonte ou semântica gerencial.
+Os 25 indicadores sem SQL disponível têm motivo individual no [dicionário](DICIONARIO_INDICADORES.md). Conectar o banco não resolve ausência de fonte ou semântica gerencial.
 
 Não houve deploy, push, acesso SSH, alteração de banco, migração analítica ou alteração do n8n nesta execução.

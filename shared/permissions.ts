@@ -67,6 +67,16 @@ export const MODULE_PERMISSION: Record<string, Permission> = {
 const ITEM_PERMISSION: Record<string, Permission> = {
   lancamentos_futuros: "financeiro.view",
   custo_mao_de_obra: "custos_pessoal.view",
+  custo_registrado: "custos_pessoal.view",
+  cobertura_custos: "custos_pessoal.view",
+  apontamentos_custo_zero: "custos_pessoal.view",
+  custos_registrados: "custos_pessoal.view",
+  vinculos_centros_custo: "financeiro.view",
+  custo_por_colaborador: "custos_pessoal.view",
+  custo_por_cliente: "custos_pessoal.view",
+  custo_por_departamento: "custos_pessoal.view",
+  custo_por_projeto: "custos_pessoal.view",
+  custo_por_atividade: "custos_pessoal.view",
   ...Object.fromEntries(
     ["margem_bruta", "margem_contribuicao", "margem_operacional", "resultado_operacional", "horas_por_mil_receita", "margem_por_cliente", "resultado_por_projeto", "evolucao_margem", "rentabilidade_clientes", "rentabilidade_projetos", "custo_por_servico", "top_clientes_resultado", "top_projetos_menor_margem", "resultado_mensal", "margem", "resultado", "custo_direto"].map((k) => [k, "rentabilidade.view" as Permission])
   ),

@@ -11,6 +11,11 @@ let srv: Awaited<ReturnType<typeof startServer>>;
 let admin: Client, restricted: Client;
 before(async () => {
   await initialiseFixtures(engine);
+  await engine.exec(`ALTER TABLE core.time_entries ADD COLUMN source_kind text;
+    ALTER TABLE core.time_entries ADD COLUMN task_id bigint;
+    UPDATE core.time_entries SET source_kind='TASK',task_id=7 WHERE job_id=1;
+    CREATE TABLE core.job_tasks(job_id bigint,iclips_id bigint,name text,estimated_minutes numeric);
+    INSERT INTO core.job_tasks VALUES(1,7,'Atividade fixture',60)`);
   // Substitui apenas o transporte pg por PostgreSQL embarcado de testes; nenhuma rede é usada.
   mock.method(pg.Pool.prototype, "query", async (sql: any, params: any) => engine.query(sql, params));
   process.env.DATABASE_URL = "postgres://fixture_ro@127.0.0.1:1/quest_rinne";
@@ -22,6 +27,21 @@ before(async () => {
 });
 after(async () => { await closePool(); srv.stop(); await engine.close(); mock.restoreAll(); });
 const period = "start=2026-01-01&end=2026-01-31";
+test('custos novos são removidos de linhas, colunas, relatórios e gráficos operacionais',async()=>{
+  const rows=await restricted.req(`/api/tables/colaboradores?${period}`);
+  assert.ok(!rows.body.columns.includes('custo_registrado'));
+  assert.ok(rows.body.rows.every((r:any)=>!('custo_registrado' in r)&&!('cobertura_custos' in r)));
+  const adminRows=await admin.req(`/api/tables/colaboradores?${period}`);
+  assert.equal(adminRows.body.rows.reduce((n:number,r:any)=>n+Number(r.custo_registrado),0),150);
+  assert.equal((await restricted.req(`/api/indicators/cobertura_custos?${period}`)).status,403);
+  const detail=await restricted.req(`/api/indicators/atividades_trabalhadas/records?${period}`);
+  assert.equal(detail.body.status,'OK');assert.ok(detail.body.rows.length>0);
+  assert.ok(detail.body.rows.every((r:any)=>!('custo_registrado'in r)));
+  const mod=await restricted.req(`/api/modules/colaboradores?${period}`);
+  assert.ok(mod.body.charts.every((c:any)=>!c.id.startsWith('custo_')||c.status==='FORBIDDEN'));
+  const report=await restricted.req(`/api/reports/departamentos?${period}&format=json`);
+  assert.ok(report.body.tables.every((t:any)=>t.rows.every((r:any)=>!('custo_registrado'in r)&&!('cobertura_custos'in r))));
+});
 
 test("API real consulta introspecção e reconcilia indicador, registros e comparação", async () => {
   const k = await admin.req(`/api/indicators/horas_registradas?${period}&compare=1`);
@@ -38,7 +58,7 @@ test("escopo imposto vale para cards, registros, dimensões e exportações", as
   const r = await restricted.req(`/api/indicators/horas_registradas/records?${period}&department=B`);
   assert.ok(r.body.rows.every((r: any) => r.department_id === "A"));
   const dim = await restricted.req(`/api/dimensions/departments?${period}&department=B`);
-  assert.deepEqual(dim.body.options, [{ value: "A", label: "A" }]);
+  assert.deepEqual(dim.body.options, [{ value: "A", label: "Criação" }]);
   const report = await restricted.req(`/api/reports/departamentos?${period}&department=B&format=json`);
   assert.equal(report.body.filters.department, "A");
   assert.equal(report.body.indicators.find((i: any) => i.id === "horas_registradas").value, 2.75);

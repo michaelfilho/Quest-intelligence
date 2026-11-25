@@ -39,6 +39,7 @@ export const DECLARED_RELATIONSHIPS = [
   ["jobs", "principal_employee_id", "employees", "iclips_id"], ["jobs", "auxiliary_employee_id", "employees", "iclips_id"],
   ["time_entries", "job_id", "jobs", "iclips_id"], ["time_entries", "employee_id", "employees", "iclips_id"],
   ["time_entries", "department_id", "departments", "id"], ["financial_entries", "job_id", "jobs", "iclips_id"],
+  ["employees", "main_department_id", "departments", "id"],
   ["financial_entries", "category_id", "financial_categories", "iclips_id"], ["financial_entries", "account_id", "financial_accounts", "iclips_id"],
   ["financial_entry_cost_centers", "financial_entry_id", "financial_entries", "iclips_id"],
   ["job_pieces", "job_id", "jobs", "iclips_id"], ["job_pieces", "catalog_piece_id", "piece_catalog", "iclips_id"],

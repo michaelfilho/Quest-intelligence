@@ -1,6 +1,6 @@
 # Homologação local — 25/11/2026
 
-Resultado: **35 verificações Playwright aprovadas, zero falhas e zero erros inesperados de console**, usando Microsoft Edge headless e o build de produção via Vite preview. Quatro mensagens HTTP 401/403 são esperadas nos cenários de autenticação e acesso negado.
+Resultado: **36 verificações Playwright aprovadas na raiz e outras 36 em `/core/`, zero falhas e zero erros inesperados de console**, usando Microsoft Edge headless e o build de produção via Vite preview. Quatro mensagens HTTP 401/403 são esperadas em cada execução nos cenários de autenticação e acesso negado. A homologação visual local não acessa PostgreSQL externo; a integração SQL é coberta separadamente pelas fixtures PostgreSQL e API real em [TESTES.md](TESTES.md).
 
 ## Reproduzir
 

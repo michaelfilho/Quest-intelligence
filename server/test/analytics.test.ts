@@ -32,6 +32,16 @@ test("PostgreSQL: retrabalho soma a mesma base elegível e percentual é fraçã
   assert.equal((await computeMetric("horas_retrabalho", f, query)).value, .5);
   assert.equal((await computeMetric("percentual_retrabalho", f, query)).value, .5 / 4.75);
 });
+test('zero de retrabalho exige evidência; flags ausentes não viram zero',async()=>{
+  const employee={...f,employee:'2'};
+  assert.equal((await computeMetric('horas_retrabalho',employee,query)).value,0);
+  assert.equal((await computeMetric('percentual_retrabalho',employee,query)).value,0);
+  await pg.exec('UPDATE core.time_entries SET is_rework=NULL WHERE id=5');
+  try {
+    assert.equal((await computeMetric('horas_retrabalho',employee,query)).value,null);
+    assert.equal((await computeMetric('percentual_retrabalho',employee,query)).value,null);
+  } finally {await pg.exec('UPDATE core.time_entries SET is_rework=false WHERE id=5');}
+});
 test("PostgreSQL: faturamento exclui canceladas/nulos, preserva sinal e separa competência", async () => {
   assert.equal((await computeMetric("receita_faturada", f, query)).value, 90);
   assert.equal((await computeMetric("faturamento_liquido", f, query)).value, 81);
@@ -49,7 +59,7 @@ test("PostgreSQL: paginação conserva total em página vazia; registros reconci
   const empty = await metricRecords("horas_registradas", f, { page: 10, pageSize: 100 }, query);
   assert.equal(empty.total, 5); assert.equal(empty.rows.length, 0);
   const t = await timeTable("timesheet_departamentos", f, { page: 1, pageSize: 10, sort: "horas", dir: "desc" }, query);
-  assert.equal(t.total, 2); assert.equal(t.rows[0].departamento, "A");
+  assert.equal(t.total, 2); assert.equal(t.rows[0].departamento, "Criação");
 });
 test("PostgreSQL: gráficos usam a mesma base de cards e filtros", async () => {
   const c = await timeChart("horas_por_departamento", { ...f, department: "A" }, query);

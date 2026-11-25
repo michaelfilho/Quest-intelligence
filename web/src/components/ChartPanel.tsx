@@ -56,6 +56,7 @@ export function ChartPanel({ def, result }: { def: ChartDef; result?: ChartResul
           </ResponsiveContainer>
         )}
       </div>
+      {result?.status==='OK' && result.reason && <p className="border-t border-q-line px-6 py-3 text-xs leading-relaxed text-q-mid">{result.reason}</p>}
     </Panel>
   );
 }

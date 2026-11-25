@@ -1,10 +1,13 @@
 // Mapeamentos determinísticos. Cada fonte é validada pela introspecção em tempo de execução.
 import type { Dimension, Filters, IndicatorResult, Reliability, TableResult } from "../../shared/contracts.js";
 import { computeMetric, METRICS, metricRecords, TIME_CHARTS, timeChart, invoiceChart, TIME_TABLES, timeTable, sourceStatement, paginate, operationalDimension, clientTable, jobTable } from "./analytics.js";
-import { CASH_METRICS, computeCash, cashRecords, cashChart, CASH_DIMENSION_CHARTS, cashDimensionChart, cashClientTable } from "./cash.js";
-import { QUALITY_METRICS, qualityMetric } from "./quality.js";
+import { CASH_METRICS, computeCash, cashRecords, cashChart, CASH_DIMENSION_CHARTS, cashDimensionChart, cashClientTable, classifiedCash, costCenterLinks } from "./cash.js";
+import { QUALITY_METRICS, qualityMetric, conflictsTable } from "./quality.js";
 import { REGISTRY_COUNTS, registryCount, registryRecords } from "./registry-counts.js";
-import { jobChart, invoiceEvolution, ingestChart, ingestTable, futureEntries, timeAlerts, taskTable } from "./extensions.js";
+import { jobChart, invoiceEvolution, ingestChart, ingestTable, futureEntries, timeAlerts } from "./extensions.js";
+import { activityMetric, activityChart, workedActivities } from './activities.js';
+import { projectMetric } from './policies.js';
+import { COST_CHARTS,costChart,costTable,costCoverage } from './costs.js';
 
 export type Computed = Pick<IndicatorResult, "value" | "recordsUsed" | "recordsExcluded" | "exclusions" | "updatedAt" | "reason" | "temporalField" | "coverage"> & {
   reliability: Reliability;
@@ -36,6 +39,10 @@ for (const id of CASH_METRICS) indicatorImpls[id] = { compute: f => computeCash(
 for (const id of QUALITY_METRICS) indicatorImpls[id] = { comparable: false, compute: f => qualityMetric(id, f) };
 for (const id of Object.keys(REGISTRY_COUNTS)) indicatorImpls[id] = { comparable: false, compute: f => registryCount(id, f), records: (f, p) => registryRecords(id, f, p) };
 indicatorImpls.lancamentos_futuros = { compute: f => futureEntries(f) };
+for (const id of ['horas_previstas','desvio_horas','horas_vs_previstas','atividades_trabalhadas','pecas_trabalhadas']) indicatorImpls[id]={compute:f=>activityMetric(id,f),records:workedActivities};
+for (const id of ['projetos_ativos','projetos_suspensos','projetos_concluidos','projetos_atrasados']) indicatorImpls[id]={comparable:id==='projetos_concluidos',compute:f=>projectMetric(id,f)};
+for (const id of ['receita_recebida','despesas']) indicatorImpls[id]={compute:f=>classifiedCash(id,f)};
+for (const id of ['cobertura_custos','apontamentos_custo_zero']) indicatorImpls[id]={compute:f=>costCoverage(id,f)};
 export const chartImpls: Partial<Record<string, ChartImpl>> = Object.fromEntries(TIME_CHARTS.map(id => [id, (f: Filters) => timeChart(id, f)]));
 chartImpls.evolucao_faturamento = invoiceChart;
 chartImpls.movimentacoes_realizadas = f => cashChart(f);
@@ -43,13 +50,18 @@ chartImpls.projetos_por_status = f => jobChart("status", f);
 chartImpls.evolucao_producao = f => jobChart("opened", f);
 chartImpls.evolucao_financeira = invoiceEvolution;
 chartImpls.ingest_por_status = f => ingestChart(f);
+chartImpls.previstas_vs_realizadas = activityChart;
+for (const id of Object.keys(COST_CHARTS)) chartImpls[id]=f=>costChart(id,f);
 for (const id of CASH_DIMENSION_CHARTS) chartImpls[id] = f => cashDimensionChart(id,f);
 export const tableImpls: Partial<Record<string, TableImpl>> = Object.fromEntries(TIME_TABLES.map(id => [id, (f: Filters, p: Page) => timeTable(id, f, p)]));
 tableImpls.clientes = clientTable;
+tableImpls.conflitos=conflictsTable;
+tableImpls.vinculos_centros_custo=costCenterLinks;
 tableImpls.projetos = jobTable;
 tableImpls.lancamentos_financeiros = (f, p) => cashRecords("movimentos", f, p);
 tableImpls.alertas = timeAlerts;
-tableImpls.atividades = (f, p) => taskTable(f, p);
+tableImpls.atividades = workedActivities;
+tableImpls.custos_registrados = costTable;
 tableImpls.tarefas_ingest = (f, p) => ingestTable(f, p);
 tableImpls.receita_por_cliente = (f,p) => cashClientTable(f,p);
 tableImpls.notas_fiscais = async (f, p) => {

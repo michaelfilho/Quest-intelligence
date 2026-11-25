@@ -49,9 +49,18 @@ while IFS= read -r f; do
 done < <(git ls-tree -r --name-only "$SHA" -- server/src shared web/src web/vite.config.ts web/nginx.conf.template web/security-headers.conf web/docker-entrypoint.d server/Dockerfile web/Dockerfile)
 
 # Backup consistente do SQLite; não abre conexão PostgreSQL.
+# A API existente verifica sua própria conexão. Funciona com allowlist ativa:
+# loopback direto sem headers de proxy é o healthcheck local já autorizado pelo backend.
+docker exec "$API" node -e "$(cat "$STAGE/deploy/check-api.cjs");check().catch(()=>process.exit(1));"
 TMPDB="/tmp/rinne-before-$STAMP.db"
 docker exec "$API" node -e 'const {DatabaseSync}=require("node:sqlite");const path=require("node:path");const d=new DatabaseSync(path.join(process.env.DATA_DIR||"/app/server/data","app.db"),{readOnly:true}); d.prepare("VACUUM INTO ?").run(process.argv[1]);d.close();const b=new DatabaseSync(process.argv[1],{readOnly:true});if(b.prepare("PRAGMA integrity_check").get().integrity_check!=="ok")process.exit(1);b.close();' "$TMPDB"
-docker cp "$API:$TMPDB" "$BACKUP/app.db"
+# Streaming binário sem TTY também funciona quando /tmp é tmpfs.
+docker exec "$API" node -e 'require("node:fs").createReadStream(process.argv[1]).on("error",()=>process.exit(1)).pipe(process.stdout)' "$TMPDB" > "$BACKUP/app.db.part"
+[[ -s "$BACKUP/app.db.part" ]]
+EXPECTED_DB_SHA="$(docker exec "$API" node -e 'const f=require("node:fs"),c=require("node:crypto");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' "$TMPDB")"
+[[ "$EXPECTED_DB_SHA" =~ ^[0-9a-f]{64}$ ]]
+printf '%s  %s\n' "$EXPECTED_DB_SHA" "$BACKUP/app.db.part" | sha256sum --check --status
+mv -- "$BACKUP/app.db.part" "$BACKUP/app.db"
 docker exec "$API" node -e 'require("node:fs").unlinkSync(process.argv[1])' "$TMPDB"
 sha256sum "$BACKUP/app.db" > "$BACKUP/app.db.sha256"
 

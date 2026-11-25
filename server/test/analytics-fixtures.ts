@@ -33,5 +33,15 @@ export async function initialiseFixtures(pg: PGlite) {
       (2, 'N2', 'cancelled', '2026-01-06', '2026-01-01', 999, 999, 0, 'Fixture', '2026-01-06'),
       (3, 'N3', 'issued', '2026-01-07', '2026-01-01', -10, -9, -1, 'Fixture', '2026-01-07'),
       (4, 'N4', 'issued', '2026-01-08', '2026-01-01', NULL, NULL, NULL, 'Fixture', NULL),
-      (5, 'N5', 'issued', '2099-01-01', '2099-01-01', 5000, 5000, 0, 'Fixture', NULL);`);
+      (5, 'N5', 'issued', '2099-01-01', '2099-01-01', 5000, 5000, 0, 'Fixture', NULL);
+    ALTER TABLE core.jobs ADD COLUMN name text;
+    UPDATE core.jobs SET name=CASE WHEN iclips_id=1 THEN 'Campanha Aurora' ELSE 'Projeto Horizonte' END;
+    CREATE TABLE core.employees (iclips_id bigint, name text, main_department_id text);
+    INSERT INTO core.employees VALUES (1,'Ana Lima','B'),(2,'Ana Lima','A'),(3,NULL,'A');
+    CREATE TABLE core.departments (id text, iclips_id bigint, name text);
+    INSERT INTO core.departments VALUES ('A',901,'Criação'),('B',902,'Operações');
+    CREATE TABLE core.clients (iclips_id bigint, name text);
+    INSERT INTO core.clients VALUES (10,'Cliente Aurora'),(20,'Cliente Horizonte');
+    CREATE TABLE core.client_groups (iclips_id bigint, name text);
+    INSERT INTO core.client_groups VALUES (5,'Grupo Exemplo');`);
 }

@@ -1,7 +1,7 @@
 // Gera docs/DICIONARIO_INDICADORES.md a partir do catálogo (fonte única). Uso: npm run docs:indicators
 import { writeFileSync } from "node:fs";
-import { CHARTS, INDICATORS, MODULES } from "../../shared/catalog.js";
-import { chartImpls, indicatorImpls } from "./mappings.js";
+import { CHARTS, INDICATORS, MODULES,TABLES } from "../../shared/catalog.js";
+import { chartImpls, indicatorImpls,tableImpls } from "./mappings.js";
 import { mappingLimitation } from "./mapping-limitations.js";
 
 const status = (ok: boolean) => (ok ? "SQL implementado; condicionado à introspecção e qualidade parcial" : "indisponível; sem fonte/semântica validada");
@@ -16,5 +16,8 @@ md += "\n## Limitações por indicador ainda indisponível\n\n";
 for (const i of Object.values(INDICATORS).filter(i => !indicatorImpls[i.id])) md += `- \`${i.id}\`: ${mappingLimitation(i.id)}\n`;
 md += "\n## Gráficos\n\n| id | gráfico | tipo | unidade | base | situação |\n|---|---|---|---|---|---|\n";
 for (const c of Object.values(CHARTS)) md += `| \`${c.id}\` | ${c.label} | ${c.kind} | ${c.unit} | ${c.basis} | ${status(!!chartImpls[c.id])} |\n`;
+md += '\n## Tabelas\n\n| id | tabela | situação |\n|---|---|---|\n';
+for(const t of Object.values(TABLES)) md+=`| \`${t.id}\` | ${t.label} | ${status(!!tableImpls[t.id])} |\n`;
+md+='\nSQL implementado não comprova disponibilidade em produção. Políticas gerenciais e perfis de relacionamento são validados em execução; ausências continuam indisponíveis. Consultar CORRECOES_RELACIONAMENTOS.md.\n';
 writeFileSync(new URL("../../docs/DICIONARIO_INDICADORES.md", import.meta.url), md);
 console.log(`OK: ${Object.keys(INDICATORS).length} indicadores, ${Object.keys(CHARTS).length} gráficos.`);

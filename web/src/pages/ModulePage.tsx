@@ -71,7 +71,7 @@ function ModuleContent({ moduleId }: { moduleId: string }) {
     <div className="mx-auto max-w-[1480px] space-y-6">
       <PageHeader
         icon={MODULE_ICON[m.id]}
-        title={<>{m.label}{id && <span className="font-medium text-q-mid">· {id}</span>}</>}
+        title={<>{m.label}{id && <span className="font-medium text-q-mid">· {data?.entityName ?? "..."}</span>}</>}
         subtitle={m.question}
         back={m.detailOf && (
           <Link to={{ pathname: m.detailOf === "client" ? "/clientes" : "/projetos", search }} className="mb-1 inline-block text-xs font-medium text-q-mid hover:text-q-orange">

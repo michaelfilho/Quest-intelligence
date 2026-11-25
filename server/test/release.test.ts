@@ -1,11 +1,32 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { test } from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync,writeFileSync,readFileSync } from "node:fs";
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 const { renderRelease, verifyRunning } = createRequire(import.meta.url)("../../deploy/render-release.cjs");
+const {check}=createRequire(import.meta.url)('../../deploy/check-api.cjs');
+test('verificação interna exige PostgreSQL disponível e sessão protegida sem headers de proxy',async()=>{
+  const ok=async(url:string,options:unknown)=>{assert.equal(options,undefined);assert.ok(url.startsWith('http://127.0.0.1:'));return url.endsWith('/health')?new Response(JSON.stringify({status:'ok',database:'CONNECTED'})):new Response('',{status:401});};
+  await check(ok);
+  await assert.rejects(()=>check(async()=>new Response('',{status:403})));
+  await assert.rejects(()=>check(async()=>new Response(JSON.stringify({status:'ok',database:'DATABASE_UNAVAILABLE'}))));
+  await assert.rejects(()=>check(async(url:string)=>url.endsWith('/health')?new Response(JSON.stringify({status:'ok',database:'CONNECTED'})):new Response('{}')));
+});
+test('stream binário preserva o SQLite consistente e o script não usa docker cp',()=>{
+  const dir=mkdtempSync(join(tmpdir(),'rinne-stream-test-'));
+  try {
+    const source=join(dir,'source.db'),target=join(dir,'target.db');
+    const db=new DatabaseSync(source);db.exec("CREATE TABLE sample(name TEXT); INSERT INTO sample VALUES('Criação')");db.close();
+    const stream=spawnSync(process.execPath,['-e','require("node:fs").createReadStream(process.argv[1]).pipe(process.stdout)',source],{encoding:null});
+    assert.equal(stream.status,0);writeFileSync(target,stream.stdout);assert.deepEqual(readFileSync(source),readFileSync(target));
+    const copy=new DatabaseSync(target,{readOnly:true});assert.equal(copy.prepare('PRAGMA integrity_check').get()?.integrity_check,'ok');assert.equal(copy.prepare('SELECT name FROM sample').get()?.name,'Criação');copy.close();
+    const script=readFileSync(new URL('../../deploy/prepare-release.sh',import.meta.url),'utf8');
+    assert.ok(!/docker cp\s/.test(script));assert.ok(script.includes('sha256sum --check --status'));assert.ok(script.includes('check-api.cjs'));
+  } finally {rmSync(dir,{recursive:true,force:true});}
+});
 const config = () => ({ services: {
   api: { environment: { DATABASE_URL:'fixture-readonly', TRUST_PROXY:'172.1.2.3' }, volumes:[{ type:'bind',source:'/opt/private/data',target:'/app/server/data' }], networks:['postgres'] },
   web: { environment: { API_UPSTREAM:'api:3333' }, ports:[{published:18372,target:80,host_ip:'127.0.0.1'}], labels:{'traefik.test':'preservar'}, volumes:[] },

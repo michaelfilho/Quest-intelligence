@@ -127,7 +127,7 @@ export const delta = (cur: unknown, prev: number | null) =>
 
 export const STATUS_LABEL: Record<ResultStatus, string> = {
   OK: "",
-  NOT_IMPLEMENTED: "Aguardando mapeamento",
+  NOT_IMPLEMENTED: "Fonte ou critério pendente",
   DATABASE_UNAVAILABLE: "Sem conexão com o banco",
   INSUFFICIENT_DATA: "DADOS INSUFICIENTES",
   ERROR: "Erro na consulta",

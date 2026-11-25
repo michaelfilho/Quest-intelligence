@@ -3,12 +3,32 @@ import { parseArgs } from "node:util";
 import { closePool, dbState, q } from "./db.js";
 import { filtersSchema } from "./filters.js";
 import { resolveIndicator } from "./services.js";
+import { runtimeSchema } from './schema.js';
+import { operationalDimension } from './analytics.js';
+import { cashRecords } from './cash.js';
+import { workedActivities } from './activities.js';
+import { SourceLimitation } from './source-errors.js';
 const { values } = parseArgs({ options: { start: { type: "string" }, end: { type: "string" } } });
 const f = filtersSchema.parse(values);
 try {
   if ((await dbState()).state !== "CONNECTED") throw new Error("PostgreSQL indisponível.");
   const [session] = await q("SELECT current_user AS role, current_setting('transaction_read_only') AS readonly");
   if (session.role !== "quest_rinne_app_ro" || session.readonly !== "on") throw new Error("Verificação exige quest_rinne_app_ro e sessão somente leitura.");
+  const snapshot=await runtimeSchema();
+  let failures=0,unavailable=0;
+  async function check(name:string,action:()=>Promise<boolean>) {
+    try {const match=await action();if(!match)failures++;console.log(JSON.stringify({check:name,match,status:match?'PASS':'FAIL'}));}
+    catch(e) {
+      if (e instanceof SourceLimitation) {unavailable++;console.log(JSON.stringify({check:name,status:'UNAVAILABLE'}));}
+      else {failures++;console.log(JSON.stringify({check:name,status:'ERROR'}));}
+    }
+  }
+  async function verifiedIndicator(id:string) {
+    const indicator=await resolveIndicator(id,f,'CONNECTED');
+    if(indicator.status==='ERROR')throw new Error('Query failure');
+    if(indicator.status!=='OK')throw new SourceLimitation('Fonte ou critério indisponível');
+    return indicator;
+  }
   const reference = [
     { id: "receita_faturada", sql: `SELECT sum(service_amount)::float8 AS expected FROM core.invoices
       WHERE status = 'issued' AND service_amount::text NOT IN ('NaN','Infinity','-Infinity') AND issued_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo')
@@ -20,14 +40,73 @@ try {
       AND started_at::timestamptz < (($2::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo') AND started_at::timestamptz <= CURRENT_TIMESTAMP
       AND (finished_at IS NULL OR (finished_at::timestamptz <= CURRENT_TIMESTAMP AND finished_at::timestamptz >= started_at::timestamptz))` },
   ];
-  let failures = 0;
   for (const spec of reference) {
-    const [r] = await q(spec.sql, [f.start, f.end]);
-    const indicator = await resolveIndicator(spec.id, f, "CONNECTED");
-    const equal = indicator.status !== "ERROR" && (r.expected == null ? indicator.value == null : typeof indicator.value === "number" && Math.abs(Number(r.expected) - indicator.value) < 1e-6);
-    if (!equal) failures++;
-    // Não grava valores financeiros ou registros individuais em logs.
-    console.log(JSON.stringify({ indicator: spec.id, match: equal, status: indicator.status }));
+    await check(spec.id,async()=>{
+    let sql=spec.sql;
+    if (spec.id==='horas_registradas') {
+      const has=(column:string)=>snapshot.columns.some(c=>c.schema==='core'&&c.table==='time_entries'&&c.column===column);
+      if (!has('duration_seconds')&&!has('duration_minutes')) throw new SourceLimitation('Campo ausente');
+      for(const column of ['duration_seconds','duration_minutes']) if(!has(column))sql=sql.replaceAll(column,'NULL::numeric');
+    }
+    const [r] = await q(sql, [f.start, f.end]);
+    const indicator = await verifiedIndicator(spec.id);
+    return indicator.status !== "ERROR" && (r.expected == null ? indicator.value == null : indicator.status==='OK' && typeof indicator.value === "number" && Math.abs(Number(r.expected) - indicator.value) < 1e-6);
+    });
   }
-  process.exitCode = failures ? 1 : 0;
-} finally { await closePool(); }
+  for (const [dimension,table,key] of [['employees','employees','iclips_id'],['departments','departments','id'],['clients','clients','iclips_id'],['projects','jobs','iclips_id'],['groups','client_groups','iclips_id']] as const) {
+    await check(`names_${dimension}`,async()=>{
+      if (!['name',key].every(column=>snapshot.columns.some(c=>c.schema==='core'&&c.table===table&&c.column===column))) throw new SourceLimitation('Campo ausente');
+      const options=await operationalDimension(dimension,f);
+      if (!options.length) throw new SourceLimitation('Nenhum registro');
+      const rows=await q(`SELECT ${key}::text AS key,count(*)::int AS n,max(nullif(btrim(name::text),'')) AS name FROM core.${table} WHERE ${key}::text=ANY($1::text[]) GROUP BY ${key}::text`,[options.map(o=>o.value)]);
+      const fallback={employees:'Colaborador sem nome',departments:'Departamento sem nome',clients:'Cliente sem nome',projects:'Projeto sem nome',groups:'Grupo sem nome'}[dimension];
+      for(const o of options) {
+        const r=rows.find(r=>r.key===o.value);
+        if(Number(r?.n)>1) {if(o.label!=='Cadastro com chave duplicada')return false;continue;}
+        if(r?.name) {if(o.label!==r.name)return false;continue;}
+        if(o.label===fallback)continue;
+        if(dimension!=='departments')return false;
+        const [historical]=await q(`SELECT EXISTS(SELECT 1 FROM core.time_entries t WHERE t.department_id::text=$1
+          AND to_jsonb(t)->>'department_name_snapshot'=$2) AS valid`,[o.value,o.label]);
+        if(!historical.valid)return false;
+      }
+      return true;
+    });
+  }
+  for (const id of ['entradas_realizadas','saidas_realizadas'] as const) await check(id,async()=>{
+    const indicator=await verifiedIndicator(id);
+    let sum=0,total=0;
+    for(let page=1;;page++) {
+      const rows=await cashRecords(id,f,{page,pageSize:500});
+      sum+=rows.rows.reduce((n,r)=>n+Number(r.valor),0);total+=rows.rows.length;
+      if(total>=rows.total)break;
+    }
+    return Math.abs(sum-Number(indicator.value))<1e-6&&total===indicator.recordsUsed;
+  });
+  await check('estimates_once_per_unit',async()=>{
+    const indicator=await verifiedIndicator('horas_previstas');
+    let sum=0,total=0;const keys=new Set<string>();
+    for(let page=1;;page++) {
+      const rows=await workedActivities(f,{page,pageSize:500});
+      for(const row of rows.rows){if(keys.has(String(row.id)))return false;keys.add(String(row.id));sum+=Number(row.horas_previstas??0);}
+      total+=rows.rows.length;if(total>=rows.total)break;
+    }
+    return Math.abs(sum-Number(indicator.value))<1e-6;
+  });
+  for(const [id,schema,table,expression,fields] of [
+    ['ultima_publicacao_core','audit','qpf11_publication_state','max(published_at) FILTER (WHERE published_at<=CURRENT_TIMESTAMP)::text',['published_at']],
+    ['conflitos_abertos','audit','qpf11_publication_conflicts','count(*) FILTER (WHERE resolved_at IS NULL)::int',['resolved_at']],
+    ['conflitos_resolvidos','audit','qpf11_publication_conflicts','count(*) FILTER (WHERE resolved_at IS NOT NULL AND resolved_at<=CURRENT_TIMESTAMP)::int',['resolved_at']],
+    ['paginas_recebidas','ingest','qpf11_pages','count(*)::int',[]],
+    ['registros_recebidos','ingest','qpf11_pages',"sum(record_count) FILTER (WHERE record_count>=0 AND record_count::text NOT IN ('NaN','Infinity','-Infinity'))::float8",['record_count']],
+    ['divergencias_contagem','ingest','qpf11_tasks',`count(*) FILTER (WHERE expected_total>=0 AND received_records>=0 AND expected_total::text NOT IN ('NaN','Infinity','-Infinity') AND received_records::text NOT IN ('NaN','Infinity','-Infinity') AND expected_total<>received_records)::int`,['expected_total','received_records']],
+  ] as const) await check(id,async()=>{
+    if(!snapshot.columns.some(c=>c.schema===schema&&c.table===table)||!fields.every(column=>snapshot.columns.some(c=>c.schema===schema&&c.table===table&&c.column===column)))throw new SourceLimitation('Campo ausente');
+    const [r]=await q(`SELECT ${expression} AS value FROM ${schema}.${table}`);
+    const indicator=await verifiedIndicator(id);
+    return r.value==null?indicator.value==null:indicator.status==='OK'&&String(indicator.value)===String(r.value);
+  });
+  console.log(JSON.stringify({verification:failures?'FAIL':unavailable?'PARTIAL':'PASS'}));
+  process.exitCode = failures ? 1 : unavailable?2:0;
+} catch {console.error('Verificação não concluída. Conferir conexão existente, role e sessão somente leitura. Nenhum dado privado é impresso.');process.exitCode=1;}
+finally { await closePool(); }

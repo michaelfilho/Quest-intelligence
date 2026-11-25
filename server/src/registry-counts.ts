@@ -31,5 +31,6 @@ export async function registryRecords(id: string, f: Filters, p: Page, reader: R
   const table = REGISTRY_COUNTS[id];
   const keys = table === "departments" ? ["id"] : table === "job_tasks" ? ["job_id", "iclips_id"] : table === "workflow_steps" ? ["job_piece_id", "iclips_id"] : ["iclips_id"];
   if (!keys.every(key => schema.columns.some(c => c.schema === SCHEMAS.core && c.table === table && c.column === key))) throw new SourceLimitation("Chaves de origem não comprovadas para detalhamento.");
-  return paginate(`SELECT ${keys.join(", ")} FROM core.${table}`, [], p, keys.join(", "), reader);
+  const name=schema.columns.some(c=>c.schema===SCHEMAS.core&&c.table===table&&c.column==='name') ? ",coalesce(nullif(btrim(name::text),''),'Cadastro sem nome') AS nome" : ",'Cadastro sem nome'::text AS nome";
+  return paginate(`SELECT ${keys.join(", ")}${name} FROM core.${table}`, [], p, keys.join(", "), reader);
 }

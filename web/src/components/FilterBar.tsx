@@ -22,7 +22,7 @@ const input = "h-10 rounded-lg border border-q-line bg-white px-3 text-sm font-n
 function DimSelect({ dim, label, value, onChange }: { dim: Dimension; label: string; value?: string; onChange: (v?: string) => void }) {
   const { filters } = useFilters();
   const dimensionFilters = { ...filters, compare: false };
-  const q = useQuery({ queryKey: ["dim", dim, dimensionFilters], queryFn: () => api<DimensionResult>(`/dimensions/${dim}`, { ...dimensionFilters, compare: undefined }), staleTime: 60000 });
+  const q = useQuery({ queryKey: ["dim", dim, dimensionFilters], queryFn: () => api<DimensionResult>(`/dimensions/${dim}`, { ...dimensionFilters, compare: undefined }), staleTime: 60000,refetchInterval:dim==='services'?false:60000 });
   const options = q.data?.options ?? [];
   const disabled = !options.length && !value;
   return (
@@ -30,7 +30,7 @@ function DimSelect({ dim, label, value, onChange }: { dim: Dimension; label: str
       {label}
       <select className={`${input} min-w-40 disabled:cursor-not-allowed disabled:bg-q-bg disabled:text-q-mid`} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(e.target.value || undefined)} title={disabled ? (q.data?.reason ?? "Carregando…") : undefined}>
         <option value="">{disabled ? "Indisponível" : "Todos"}</option>
-        {value && !options.some((o) => o.value === value) && <option value={value}>{value}</option>}
+        {value && !options.some((o) => o.value === value) && <option value={value}>Seleção sem cadastro no período</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}

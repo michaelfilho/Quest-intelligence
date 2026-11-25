@@ -6,7 +6,7 @@ import type { Permission } from "../../shared/permissions.js";
 import { accessGuard, accessRouter } from "./access.js";
 import { adminRouter } from "./admin.js";
 import { authenticate, authRouter, can, csrf, requireAuth } from "./auth.js";
-import { allowedColumns, chartAllowed, indicatorAllowed, moduleAllowed, scopeFilters, stripRows, tableAllowed } from "./authz.js";
+import { allowedColumns, chartAllowed, indicatorAllowed, moduleAllowed, scopeFilters, stripRows, stripRecordFields, tableAllowed } from "./authz.js";
 import { dbState, q, SCHEMAS } from "./db.js";
 import { filtersSchema, pageSchema } from "./filters.js";
 import { reportsRouter } from "./reports.js";
@@ -96,7 +96,8 @@ export function createApp() {
     if (!indicatorAllowed(req.user!, id)) throw forbidden();
     const f = scopeFilters(req.user!, parse(filtersSchema, omit(req.query, ["page", "pageSize"])));
     const p = parse(pageSchema, req.query);
-    res.json(await resolveRecords(id, f, p, (await dbState()).state));
+    const records=await resolveRecords(id,f,p,(await dbState()).state);
+    res.json({...records,rows:stripRecordFields(req.user!,records.rows)});
   }));
 
   app.get("/api/tables/:id", h(async (req, res) => {

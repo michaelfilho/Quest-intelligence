@@ -103,7 +103,7 @@ export function DataTable({ def, filters, endpoint, title, search, actions }: { 
   else if (display === "cards") {
     const [titleCol, subCol, ...rest] = columns;
     const bar = rest.find((c) => c.type === "percent");
-    const stats = rest.filter((c) => c !== bar).slice(0, 4);
+    const stats = rest.filter((c) => c !== bar);
     body = (
       <div className="grid grid-cols-1 gap-4 px-6 pb-6 md:grid-cols-2 2xl:grid-cols-3">
         {r!.rows.map((row, i) => (
@@ -123,7 +123,7 @@ export function DataTable({ def, filters, endpoint, title, search, actions }: { 
                 </div>
               ))}
             </dl>
-            {bar && (
+            {bar && row[bar.key] != null && Number.isFinite(Number(row[bar.key])) && (
               <div className="mt-4 border-t border-q-line pt-3">
                 <div className="flex justify-between text-[11px] text-q-mid"><span>{bar.label}</span><span className="num font-semibold text-q-ink">{fmt(row[bar.key], "percent")}</span></div>
                 <div className="mt-1.5 h-1.5 rounded-full bg-q-bg"><div className="h-full rounded-full bg-q-ink" style={{ width: `${Math.min(100, Math.max(0, Number(row[bar.key]) * 100))}%` }} /></div>
@@ -176,6 +176,7 @@ export function DataTable({ def, filters, endpoint, title, search, actions }: { 
       actions={<div className="flex items-center gap-2">{actions}{r?.status === "OK" && <CountPill>{fmt(r.total, "count")} registros</CountPill>}{display === "alerts" && !r?.rows.length && <AlertTriangle size={16} className="text-q-orange" aria-hidden />}</div>}
     >
       {body}
+      {r?.status==='OK' && r.reason && <p className="border-t border-q-line px-6 py-3 text-xs leading-relaxed text-q-mid">{r.reason}</p>}
       {r && r.total > r.pageSize && display !== "list" && (
         <div className="flex items-center justify-end gap-3 border-t border-q-line px-6 py-3 text-xs text-q-mid">
           <span className="num">Página {page} de {pages}</span>

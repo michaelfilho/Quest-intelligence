@@ -2,10 +2,12 @@
 // SELECTs PostgreSQL; nenhum dado ou estrutura é criado pela aplicação.
 import type { Dimension, Filters } from "../../shared/contracts.js";
 import { TABLES } from "../../shared/catalog.js";
-import { analyticsQuery as q } from "./schema.js";
+import { analyticsQuery as q, numericTypes } from "./schema.js";
 import { SourceLimitation } from "./source-errors.js";
 export { SourceLimitation } from "./source-errors.js";
 import type { Computed, Page, Rows } from "./mappings.js";
+import { labelledTime, nameSQL, schemaFor } from "./presentation.js";
+import { activityKeys,projectActivityKeys } from './activity-profile.js';
 
 
 export type Query = <T extends Record<string, any>>(sql: string, params: unknown[]) => Promise<T[]>;
@@ -24,9 +26,9 @@ const im = (expression: string, extra: Partial<Metric> = {}): Metric => ({ domai
 export const METRICS: Record<string, Metric> = {
   horas_registradas: tm("sum(seconds) / 3600.0"),
   custo_mao_de_obra: tm("sum(labor_cost)", { amount: "labor_cost", condition: "labor_cost IS NOT NULL AND labor_cost::text NOT IN ('NaN','Infinity','-Infinity')", limitation: "Soma apenas labor_cost registrado em apontamentos válidos; não adiciona duração × hourly_rate nem despesas de pessoal. Custo ausente reduz cobertura; não certifica custo total ou margem. " + timeNote }),
-  horas_retrabalho: tm("sum(seconds) / 3600.0", { condition: "is_rework IS TRUE" }),
+  horas_retrabalho: tm("sum(seconds) / 3600.0",{condition:'is_rework IS TRUE'}),
   retrabalho: tm("count(*)", { condition: "is_rework IS TRUE", limitation: "Quantidade de apontamentos válidos marcados is_rework; não equivale a tarefas distintas ou alterações de workflow. " + timeNote }),
-  percentual_retrabalho: tm("sum(seconds) FILTER (WHERE is_rework IS TRUE) / nullif(sum(seconds), 0)"),
+  percentual_retrabalho: tm("coalesce(sum(seconds) FILTER (WHERE is_rework IS TRUE),0) / nullif(sum(seconds), 0)",{condition:'is_rework IS NOT NULL',limitation:'Percentual no subconjunto de apontamentos válidos com marcação de retrabalho preenchida; marcações ausentes excluídas do numerador e denominador. '+timeNote}),
   colaboradores_ativos: tm("count(DISTINCT employee_id)", { condition: "employee_id IS NOT NULL" }),
   clientes_ativos: tm("count(DISTINCT client_id)", { condition: "client_id IS NOT NULL", limitation: "Clientes com apontamentos válidos no período; não representa todo cliente com movimentação financeira ou cadastro ativo. " + timeNote }),
   receita_faturada: im("sum(service_amount)", { condition: "status = 'issued' AND service_amount IS NOT NULL AND service_amount::text NOT IN ('NaN','Infinity','-Infinity')" }),
@@ -69,6 +71,10 @@ export function sourceStatement(domain: Domain, f: Filters, temporal?: string, i
     if (f.status) where.push(`j.status_text = ${bind(f.status)}`);
     sql = `SELECT t.id, t.job_id, t.employee_id, t.department_id, t.started_at, t.finished_at,
       t.completed_at, t.is_rework, ${includeLabor ? "t.labor_cost," : ""} j.client_id, j.client_group_id, j.status_text,
+      to_jsonb(t)->>'department_name_snapshot' AS department_name_snapshot,
+      to_jsonb(t)->>'source_kind' AS source_kind, to_jsonb(t)->>'task_id' AS task_id,
+      to_jsonb(t)->>'workflow_step_id' AS workflow_step_id, to_jsonb(t)->>'job_piece_id' AS job_piece_id,
+      to_jsonb(t)->>'source_path' AS source_path,
       CASE WHEN t.duration_seconds >= 0 AND t.duration_seconds::text NOT IN ('NaN','Infinity','-Infinity') AND (t.duration_minutes IS NULL OR
           (t.duration_minutes >= 0 AND t.duration_minutes::text NOT IN ('NaN','Infinity','-Infinity') AND abs(t.duration_seconds - t.duration_minutes * 60) <= 1))
           THEN t.duration_seconds::numeric
@@ -107,6 +113,8 @@ export function metricStatement(id: string, f: Filters): Statement {
     SELECT (${spec.expression})::double precision AS value, count(*)::int AS used,
       (SELECT count(*)::int FROM source) - count(*)::int AS excluded,
       ${spec.domain === "invoices" ? "max(last_seen_at)::text" : "NULL::text"} AS updated
+      ${id==='horas_retrabalho'?`, (SELECT count(*)::int FROM source WHERE ${eligibleTime}) AS base_used, (SELECT count(*)::int FROM source WHERE ${eligibleTime} AND is_rework IS NULL) AS missing_flags`:''}
+      ${id==='tempo_medio_execucao' ? ", min(extract(epoch FROM (completed_at::timestamptz-entered_at::timestamptz))/86400.0)::float8 AS minimum_days, max(extract(epoch FROM (completed_at::timestamptz-entered_at::timestamptz))/86400.0)::float8 AS maximum_days, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM (completed_at::timestamptz-entered_at::timestamptz))/86400.0)::float8 AS median_days" : ''}
     FROM eligible` };
 }
 
@@ -114,23 +122,25 @@ export async function computeMetric(id: string, f: Filters, query: Query = q): P
   const spec = METRICS[id];
   const stmt = metricStatement(id, f);
   const [r] = await query(stmt.sql, stmt.params);
-  return { value: r.value == null ? null : Number(r.value), reliability: "PARCIAL",
+  const knownZero=id==='horas_retrabalho'&&r.value==null&&Number(r.base_used)>0&&Number(r.missing_flags)===0;
+  return { value: knownZero?0:r.value == null ? null : Number(r.value), reliability: "PARCIAL",
     recordsUsed: Number(r.used), recordsExcluded: Number(r.excluded),
     exclusions: [{ reason: "Nulos, inconsistências de duração, término futuro ou condição específica do indicador", count: Number(r.excluded) }],
     updatedAt: r.updated ?? null, temporalField: spec.temporal,
     coverage: "Não certificada. Registros sem data não são atribuídos ao período e não entram nas contagens de exclusão temporal.",
-    reason: spec.limitation,
-    insufficient: r.value == null ? "Nenhum valor válido no período; ausência de valor não equivale a zero. " + spec.limitation : undefined } as Computed;
+    reason: spec.limitation + (id==='tempo_medio_execucao' ? ` Coorte: conclusões informadas no período; denominador ${r.used}. Mínimo ${r.minimum_days ?? '—'}, mediana ${r.median_days ?? '—'}, máximo ${r.maximum_days ?? '—'} dias. Sem corte arbitrário de outliers; datas inválidas/futuras excluídas.` : ''),
+    insufficient: r.value == null&&!knownZero ? "Nenhum valor válido no período; ausência de valor não equivale a zero. " + spec.limitation : undefined } as Computed;
 }
 
 export async function metricRecords(id: string, f: Filters, p: Page, query: Query = q): Promise<Rows> {
   const spec = METRICS[id];
   const src = sourceStatement(spec.domain, f, spec.temporal, spec.amount === "labor_cost");
+  const schema=spec.domain==='time'||spec.domain==='jobs'?await schemaFor(query):undefined;
   const condition = [spec.domain === "time" ? eligibleTime : `${spec.temporal}::timestamptz <= CURRENT_TIMESTAMP`, spec.condition ?? "TRUE"].join(" AND ");
-  const fields = spec.domain === "time" ? `id, job_id, employee_id, department_id, started_at, seconds / 3600.0 AS horas, is_rework${spec.amount === "labor_cost" ? ", labor_cost AS custo_registrado" : ""}`
+  const fields = spec.domain === "time" ? `id, job_id, employee_id, department_id, job_name AS projeto, employee_name AS colaborador, department_name AS departamento, started_at, seconds / 3600.0 AS horas, is_rework${spec.amount === "labor_cost" ? ", labor_cost AS custo_registrado" : ""}`
     : spec.domain === "invoices" ? "iclips_id, invoice_number, status, issued_at, competence_date, service_amount, net_amount"
-    : "iclips_id, client_id, status_text, entered_at, completed_at";
-  return paginate(`WITH source AS (${src.sql}) SELECT ${fields} FROM source WHERE ${condition}`, src.params, p, spec.domain === "time" ? "id" : "iclips_id", query);
+    : `iclips_id, client_id, ${nameSQL(schema!,'jobs','iclips_id','source.iclips_id','Projeto sem nome')} AS projeto, ${nameSQL(schema!,'clients','iclips_id','source.client_id','Cliente sem nome')} AS cliente,status_text, entered_at, completed_at`;
+  return paginate(`WITH source AS (${schema&&spec.domain==='time'?labelledTime(src.sql,schema):src.sql}) SELECT ${fields} FROM source WHERE ${condition}`, src.params, p, spec.domain === "time" ? "id" : "iclips_id", query);
 }
 
 export async function paginate(sql: string, params: unknown[], p: Page, order: string, query: Query = q): Promise<Rows> {
@@ -150,7 +160,8 @@ const groups: Record<string, { key: string; label: string; value: string }> = {
 export const TIME_CHARTS = Object.keys(groups);
 export async function timeChart(id: string, f: Filters, query: Query = q) {
   const g = groups[id]; const src = sourceStatement("time", f);
-  const rows = await query(`WITH source AS (${src.sql}) SELECT coalesce(${g.key}::text, 'Sem vínculo') AS label,
+  const schema=await schemaFor(query); const label=({client_id:"client_name",department_id:"department_name",employee_id:"employee_name",job_id:"job_name"} as Record<string,string>)[g.key];
+  const rows = await query(`WITH source AS (${labelledTime(src.sql,schema)}) SELECT ${g.key}::text AS entity_id, max(${label}) AS label,
     (${g.value})::float8 AS horas FROM source WHERE ${eligibleTime}
     GROUP BY ${g.key} ORDER BY horas DESC NULLS LAST, label LIMIT 50`, src.params);
   return { series: ["horas"], points: rows.map(r => ({ label: r.label, horas: r.horas == null ? null : Number(r.horas) })), reliability: "PARCIAL" as const, reason: timeNote };
@@ -166,14 +177,23 @@ export async function invoiceChart(f: Filters, query: Query = q) {
 
 export const TIME_TABLES = ["apontamentos", "timesheet_departamentos", "departamentos", "colaboradores", "capacidade_colaboradores", "retrabalho"];
 export async function timeTable(id: string, f: Filters, p: Page, query: Query = q): Promise<Rows> {
-  const src = sourceStatement("time", f);
+  const schema=await schemaFor(query);
+  const hasCost=schema.columns.some(c=>c.schema==='core'&&c.table==='time_entries'&&c.column==='labor_cost'&&numericTypes.has(c.type));
+  const src = sourceStatement("time", f,undefined,hasCost);
+  let activityProfile:ReturnType<typeof activityKeys>|undefined;
+  try {activityProfile=activityKeys(schema);src.sql=projectActivityKeys(src.sql,activityProfile.keys);}catch { /* Horas independem da identidade de atividade. */ }
   const key = ["departamentos", "timesheet_departamentos"].includes(id) ? "department_id" : "employee_id";
+  const hasActivities=activityProfile&&(activityProfile.task||activityProfile.workflow);
   let sql: string;
   if (id === "apontamentos") {
-    sql = `SELECT id, started_at AS data, employee_id::text AS colaborador, department_id::text AS departamento,
-      job_id::text AS projeto, seconds / 3600.0 AS horas, is_rework AS retrabalho FROM source WHERE ${eligibleTime}`;
+    sql = `SELECT id, started_at AS data, employee_name AS colaborador, department_name AS departamento,
+      job_name AS projeto, job_id AS projeto_id, seconds / 3600.0 AS horas, is_rework AS retrabalho FROM source WHERE ${eligibleTime}`;
   } else {
-    sql = `SELECT ${key}::text AS ${key === "department_id" ? "departamento" : "colaborador"},
+    sql = `SELECT ${key}::text AS entity_id, max(${key === "department_id" ? "department_name" : "employee_name"}) AS ${key === "department_id" ? "departamento" : "colaborador"}, string_agg(DISTINCT department_name, ', ') AS cargo,
+      ${key==='employee_id'?"string_agg(DISTINCT department_name, ', ') AS departamento,":''}
+      ${hasCost ? "sum(labor_cost) FILTER (WHERE labor_cost::text NOT IN ('NaN','Infinity','-Infinity'))" : 'NULL::numeric'} AS custo_registrado,
+      ${hasCost ? "count(*) FILTER (WHERE labor_cost IS NOT NULL AND labor_cost::text NOT IN ('NaN','Infinity','-Infinity'))::numeric/nullif(count(*),0)" : 'NULL::numeric'} AS cobertura_custos,
+      ${hasActivities ? "count(DISTINCT CASE WHEN source_kind='TASK' AND job_id IS NOT NULL AND task_id IS NOT NULL THEN jsonb_build_array(source_kind,job_id::text,task_id) WHEN source_kind='WORKFLOW' AND job_piece_id IS NOT NULL AND workflow_step_id IS NOT NULL THEN jsonb_build_array(source_kind,job_piece_id,workflow_step_id) END)::int" : 'NULL::int'} AS atividades,
       count(*)::int AS apontamentos, count(DISTINCT employee_id)::int AS colaboradores,
       count(DISTINCT job_id)::int AS projetos, sum(seconds) / 3600.0 AS horas,
       sum(seconds) / 3600.0 AS registradas,
@@ -182,37 +202,38 @@ export async function timeTable(id: string, f: Filters, p: Page, query: Query = 
       FROM source WHERE ${eligibleTime} ${id === "retrabalho" ? "AND is_rework IS TRUE" : ""} GROUP BY ${key}`;
   }
   const columns = TABLES[id]?.columns.map(c => c.key) ?? [];
-  const present = ["data", "colaborador", "departamento", "projeto", "horas", "retrabalho", "colaboradores", "projetos", "horas_retrabalho", "apontamentos", "registradas", "ocorrencias"];
+  const present = ["data", "colaborador", "departamento", "projeto", "horas", "retrabalho", "colaboradores", "projetos", "horas_retrabalho", "apontamentos", "registradas", "ocorrencias", "custo_registrado", "atividades", "cargo"];
   if (p.sort && (!columns.includes(p.sort) || !present.includes(p.sort))) throw new SourceLimitation("Ordenação indisponível para coluna sem fonte comprovada.");
-  return paginate(`WITH source AS (${src.sql}) ${sql}`, src.params, p, `${p.sort ?? (id === "apontamentos" ? "data" : key === "department_id" ? "departamento" : "colaborador")} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST`, query);
+  const result=await paginate(`WITH source AS (${labelledTime(src.sql,schema)}) ${sql}`, src.params, p, `${p.sort ?? (id === "apontamentos" ? "data" : key === "department_id" ? "departamento" : "colaborador")} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST${id === "apontamentos" ? ", id" : ", entity_id"}`, query);
+  return {...result,reason:'Agrupamento por identificador; nomes ausentes/duplicados sinalizados sem multiplicar fatos. Departamento histórico do apontamento. Atividades contam chaves de origem com apontamento; campos ausentes ficam sem valor. Previsão individual e aproveitamento exigem atribuição comprovada da estimativa; capacidade e ocupação exigem disponibilidade contratada. Custo registrado é parcial e não inclui duração × taxa.'};
 }
 
 export async function operationalDimension(dim: Dimension, f: Filters, query: Query = q) {
   const keys: Partial<Record<Dimension, string>> = { clients: "client_id", groups: "client_group_id", projects: "job_id", departments: "department_id", employees: "employee_id", statuses: "status_text" };
   const key = keys[dim];
   if (!key) throw new SourceLimitation("Dimensão sem semântica confirmada; nenhum valor é presumido.");
-  const src = sourceStatement("time", f);
-  const rows = await query(`WITH source AS (${src.sql}) SELECT DISTINCT ${key}::text AS value,
-    ${key}::text AS label FROM source WHERE ${eligibleTime} AND ${key} IS NOT NULL ORDER BY 1 LIMIT 500`, src.params);
+  const src = sourceStatement("time", f); const schema=await schemaFor(query); const label=({clients:"client_name",groups:"group_name",projects:"job_name",departments:"department_name",employees:"employee_name",statuses:"status_text"} as Record<string,string>)[dim];
+  const rows = await query(`WITH source AS (${labelledTime(src.sql,schema)}) SELECT ${key}::text AS value,
+    max(${label}) AS label FROM source WHERE ${eligibleTime} AND ${key} IS NOT NULL GROUP BY ${key} ORDER BY 2,1 LIMIT 500`, src.params);
   return rows.map(r => ({ value: String(r.value), label: String(r.label) }));
 }
 
 export async function clientTable(f: Filters, p: Page, query: Query = q) {
-  const src = sourceStatement("time", f);
+  const src = sourceStatement("time", f); const schema=await schemaFor(query);
   const sort = p.sort ?? "cliente";
   if (!["cliente", "grupo", "projetos", "horas"].includes(sort)) throw new SourceLimitation("Coluna sem fonte comprovada para ordenação de clientes.");
-  return paginate(`WITH source AS (${src.sql}) SELECT client_id AS id,
-    coalesce(client_id::text, 'Sem vínculo') AS cliente, client_group_id::text AS grupo,
+  return paginate(`WITH source AS (${labelledTime(src.sql,schema)}) SELECT client_id AS id,
+    max(client_name) AS cliente, string_agg(DISTINCT group_name, ', ') AS grupo,
     count(DISTINCT job_id)::int AS projetos, sum(seconds) / 3600.0 AS horas FROM source
-    WHERE ${eligibleTime} GROUP BY client_id, client_group_id`, src.params, p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST, id`, query);
+    WHERE ${eligibleTime} GROUP BY client_id`, src.params, p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST, id`, query);
 }
 
 export async function jobTable(f: Filters, p: Page, query: Query = q) {
-  const src = sourceStatement("jobs", f, "entered_at");
+  const src = sourceStatement("jobs", f, "entered_at"); const schema=await schemaFor(query);
   const sort = p.sort ?? "codigo";
   if (!["codigo", "titulo", "cliente", "status", "abertura", "prazo"].includes(sort)) throw new SourceLimitation("Coluna sem fonte comprovada para ordenação de projetos.");
-  return paginate(`WITH source AS (${src.sql}) SELECT iclips_id AS id, iclips_id::text AS codigo,
-    iclips_id::text AS titulo, client_id::text AS cliente, status_text AS status,
+  return paginate(`WITH source AS (${src.sql}) SELECT iclips_id AS id, NULL::text AS codigo,
+    ${nameSQL(schema,'jobs','iclips_id','source.iclips_id','Projeto sem nome')} AS titulo, ${nameSQL(schema,'clients','iclips_id','source.client_id','Cliente sem nome')} AS cliente, status_text AS status,
     entered_at AS abertura, expected_end_at AS prazo FROM source WHERE entered_at::timestamptz <= CURRENT_TIMESTAMP`,
     src.params, p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST, id`, query);
 }
