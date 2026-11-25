@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+.env
+.env.*
+deploy/.env.production
+deploy/htpasswd
+docs
+sql
+*.log
+.api.log
+.web.log
+backup
+server/data
+e2e
+scripts

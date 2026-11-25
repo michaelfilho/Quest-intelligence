@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* Identidade Quest: preto, laranja, cinzas e branco */
+@theme {
+  --color-q-ink: #111111;
+  --color-q-orange: #f58220;
+  --color-q-graphite: #292929;
+  --color-q-mid: #777777;
+  --color-q-line: #e6e6e6;
+  --color-q-bg: #f3f3f3;
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-q-bg);
+  color: var(--color-q-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-q-orange);
+  outline-offset: 2px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}

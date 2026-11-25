@@ -1,0 +1,12 @@
+{
+  "name": "quest-rinne-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Homologação visual local (Playwright com o Microsoft Edge instalado; sem download de navegadores).",
+  "scripts": {
+    "homologacao": "node homologacao.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.65.1"
+  }
+}

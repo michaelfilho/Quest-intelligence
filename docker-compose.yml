@@ -1,0 +1,34 @@
+# LOCAL: API + web com a mesma cadeia de proxy da produção, sem banco (DATABASE_UNAVAILABLE) ou via túnel no .env.
+#   docker compose up --build   →  http://localhost:8080
+#   1º acesso: docker compose exec api npm run user:admin -- <usuario>
+services:
+  api:
+    build: { context: ., dockerfile: server/Dockerfile }
+    env_file: [{ path: .env, required: false }]
+    environment:
+      HOST: 0.0.0.0
+      TRUST_PROXY: 172.30.58.2
+      REQUIRE_PROXY: "true"
+      COOKIE_SECURE: "false" # http://localhost sem TLS; produção usa true
+    volumes:
+      - ./server/data:/app/server/data
+    restart: unless-stopped
+
+  web:
+    build: { context: ., dockerfile: web/Dockerfile }
+    depends_on: [api]
+    environment:
+      API_UPSTREAM: api:3333
+      AUTH_BASIC: "off"
+      REAL_IP_FROM: "" # acesso direto do navegador: o IP da conexão é o cliente
+    networks:
+      default:
+        ipv4_address: 172.30.58.2
+    ports: ["127.0.0.1:8080:80"]
+    restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.58.0/29

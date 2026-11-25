@@ -1,0 +1,61 @@
+# PRODUÇÃO (VPS) — NÃO executado ainda. Antes do primeiro deploy:
+#   docker inspect quest-rinne-db-1 --format '{{json .NetworkSettings.Networks}}'   → POSTGRES_NETWORK
+#   docker network ls / ip route                                                     → confirmar que RINNE_SUBNET está livre
+# e preencher deploy/.env.production.
+#   docker compose -f docker-compose.prod.yml --env-file deploy/.env.production up -d --build
+#
+# Cadeia de confiança do IP do cliente:
+#   cliente → [Cloudflare?] → proxy TLS da VPS → nginx (web, IP fixo) → API
+#   - nginx aceita X-Forwarded-For só de REAL_IP_FROM (proxy da VPS / Cloudflare) e repassa UM valor limpo;
+#   - API confia só no IP fixo do nginx (TRUST_PROXY) e, com REQUIRE_PROXY, recusa qualquer outra origem.
+services:
+  api:
+    build: { context: ., dockerfile: server/Dockerfile }
+    env_file: deploy/.env.production
+    environment:
+      HOST: 0.0.0.0
+      NODE_ENV: production
+      TRUST_PROXY: ${RINNE_WEB_IP:-172.30.57.2}
+      REQUIRE_PROXY: "true"
+      COOKIE_SECURE: "true"
+    networks:
+      default: {}
+      postgres: {}
+    read_only: true
+    tmpfs: [/tmp] # cache do tsx
+    volumes:
+      - ./deploy/data:/app/server/data # app.db (usuários, sessões, auditoria, configurações) + allowlist — chown 1000:1000
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    # Sem "ports": a API só é acessível pelo nginx.
+
+  web:
+    build: { context: ., dockerfile: web/Dockerfile }
+    depends_on: [api]
+    environment:
+      API_UPSTREAM: api:3333
+      AUTH_BASIC: ${AUTH_BASIC:-off}
+      # Proxies autorizados a informar o IP do cliente (gateway da rede = proxy no host da VPS; + Cloudflare se usada).
+      REAL_IP_FROM: ${REAL_IP_FROM:-172.30.57.1}
+    networks:
+      default:
+        ipv4_address: ${RINNE_WEB_IP:-172.30.57.2}
+    volumes:
+      - ./deploy/htpasswd:/etc/nginx/htpasswd:ro
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run, /etc/nginx/conf.d]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, NET_BIND_SERVICE]
+    ports: ["127.0.0.1:${WEB_PORT:-8080}:80"] # publicar via proxy reverso/HTTPS existente na VPS
+    restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${RINNE_SUBNET:-172.30.57.0/29}
+  postgres:
+    external: true
+    name: ${POSTGRES_NETWORK:?defina POSTGRES_NETWORK com a rede do container quest-rinne-db-1}

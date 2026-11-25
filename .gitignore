@@ -1,0 +1,31 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+deploy/.env.production
+deploy/htpasswd
+*.log
+server/data/
+deploy/data/
+backup/
+# evidências locais de homologação (capturas, logs)
+e2e/output/
+# bancos da aplicação / gravações / chaves — nunca versionar
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.webm
+*.wav
+*.mp3
+# caches e temporários
+.vite/
+*.tsbuildinfo
+coverage/
+.DS_Store
+Thumbs.db
