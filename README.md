@@ -1,4 +1,25 @@
-# QUEST RINNE 1.0
+# QUEST INTELLIGENCE — protótipo atual
+
+Implementação do prompt e referências enviados em 26/11/2026, com dados exclusivamente fictícios e API REST local.
+
+**Acesso protegido por IP e senha.** Antes do primeiro uso, crie o administrador com `npm run user -- admin` (a senha é exibida uma única vez). [Segurança e publicação](docs/SEGURANCA-INTELLIGENCE.md).
+
+```powershell
+npm run setup
+npm run dev
+```
+
+Interface: **http://127.0.0.1:5175** · API: **http://127.0.0.1:4310/api/v1**.
+
+- `backend/`: Express + TypeScript, dados fictícios e cálculos centralizados.
+- `frontend/`: React + TypeScript + Vite + Tailwind, componentes no padrão shadcn/ui, Recharts e React Router.
+- `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run test:prototype`: validação do protótipo.
+
+[Escopo, API e decisões do protótipo](docs/QUEST-INTELLIGENCE.md). Todos os módulos do menu possuem telas com dados fictícios e navegação funcional. Financeiro, capacidade, retrabalho, inteligência e administração também estão disponíveis para visualização; não restam páginas “Em desenvolvimento”. Assistente, projeções, metas, rateios, perfis e auditoria são demonstrações explícitas, sem conexão externa ou gravação persistente.
+
+## Sistema anterior preservado — QUEST RINNE 1.0
+
+**Todo o conteúdo abaixo documenta o sistema anterior em `server/` e `web/`.** Para executá-lo, use os comandos `legacy:setup`, `legacy:dev:api`, `legacy:dev:web`, `legacy:build`, `legacy:test` e `legacy:homologacao`. Docker e scripts de produção existentes continuam associados ao sistema anterior; não publicam o novo protótipo.
 
 Plataforma de inteligência econômica, financeira e operacional da Quest Comunicação. Lê o PostgreSQL `quest_rinne` (schemas `core`, `ingest`, `audit`) **somente para leitura** e apresenta indicadores rastreáveis, calculados de forma determinística.
 

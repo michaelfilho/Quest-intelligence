@@ -8,6 +8,7 @@ deploy/.env.production
 deploy/htpasswd
 *.log
 server/data/
+backend/data/
 deploy/data/
 backup/
 # evidências locais de homologação (capturas, logs)

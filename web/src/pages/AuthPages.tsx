@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, LogIn, LogOut, MonitorSmartphone, UserRound } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LockKeyhole, KeyRound, LogOut, MonitorSmartphone, UserRound } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { PageHeader, Panel } from "../components/ui";
 import { api, fmt, send, useMe } from "../lib";
@@ -36,6 +36,7 @@ export function LoginPage() {
   const qc = useQueryClient();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -55,25 +56,43 @@ export function LoginPage() {
   }
 
   return (
-    <Shell>
-      <h1 className="text-lg font-bold">Entrar</h1>
-      <p className="mb-5 mt-1 text-sm text-q-mid">Use seu usuário individual. Cada acesso é registrado.</p>
-      <form onSubmit={submit} className="space-y-4">
-        <label className={label}>
-          Usuário
-          <input className={input} autoComplete="username" autoFocus required maxLength={64} value={username} onChange={(e) => setUsername(e.target.value)} />
-        </label>
-        <label className={label}>
-          Senha
-          <input className={input} type="password" autoComplete="current-password" required maxLength={256} value={password} onChange={(e) => setPassword(e.target.value)} />
-        </label>
-        {error && <Message kind="err">{error}</Message>}
-        <button disabled={busy} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-q-orange font-semibold text-white hover:brightness-95 disabled:opacity-60">
-          <LogIn size={17} /> {busy ? "Entrando…" : "Entrar"}
-        </button>
-      </form>
-      <p className="mt-5 text-xs leading-relaxed text-q-mid">Esqueceu a senha? Peça ao administrador uma senha temporária.</p>
-    </Shell>
+    <main className="core-login">
+      <svg className="core-login-art" viewBox="0 0 1672 941" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="login-outer" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#ff8700" /><stop offset=".45" stopColor="#9c3100" /><stop offset="1" stopColor="#301000" /></linearGradient>
+          <linearGradient id="login-inner" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#ffba00" /><stop offset=".5" stopColor="#ff7400" /><stop offset="1" stopColor="#e24700" /></linearGradient>
+        </defs>
+        <path d="M1259 0 Q1420 212 1672 310 V0Z" fill="url(#login-outer)" stroke="#ed6b0d" strokeWidth="3" />
+        <path d="M1411 0 Q1513 157 1672 240 V0Z" fill="url(#login-inner)" stroke="#ff9d26" strokeWidth="2" />
+        <path d="M0 603 Q211 720 344 941 H0Z" fill="url(#login-outer)" stroke="#ed6b0d" strokeWidth="3" />
+        <path d="M0 737 Q126 817 210 941 H0Z" fill="url(#login-inner)" stroke="#ff9d26" strokeWidth="2" />
+      </svg>
+      <div className="core-login-content">
+        <div className="core-login-brand" aria-label="Quest Core">
+          <span className="core-login-symbol" aria-hidden="true"><i /><i /><i /></span>
+          <span className="core-login-brand-divider" aria-hidden="true" />
+          <span>QUEST <strong>CORE</strong></span>
+        </div>
+        <section className="core-login-card" aria-labelledby="login-title">
+          <div className="core-login-lock" aria-hidden="true"><LockKeyhole /></div>
+          <h1 id="login-title">Acesso <span>Restrito</span></h1>
+          <p className="core-login-subtitle">Informe suas credenciais para acessar o ambiente.</p>
+          <form onSubmit={submit} className="core-login-form" aria-busy={busy}>
+            <label className="core-login-field">
+              <span className="sr-only">Usuário</span><UserRound aria-hidden="true" />
+              <input placeholder="Usuário" autoComplete="username" autoCapitalize="none" spellCheck={false} autoFocus required maxLength={64} value={username} onChange={(e) => setUsername(e.target.value)} />
+            </label>
+            <label className="core-login-field">
+              <span className="sr-only">Senha</span><LockKeyhole aria-hidden="true" />
+              <input placeholder="Senha" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required maxLength={256} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <button className="core-login-eye" type="button" aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <Eye aria-hidden="true" /> : <EyeOff aria-hidden="true" />}</button>
+            </label>
+            {error && <p role="alert" className="core-login-error">{error}</p>}
+            <button disabled={busy} className="core-login-submit" type="submit">{busy ? "Entrando…" : "Entrar"}<ArrowRight aria-hidden="true" /></button>
+          </form>
+        </section>
+      </div>
+    </main>
   );
 }
 

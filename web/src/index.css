@@ -25,3 +25,65 @@ body {
 .num {
   font-variant-numeric: tabular-nums;
 }
+
+/* Login: decoração vetorial em CSS, sem imagens ou recursos externos. */
+.core-login {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 48% 52%, #151515 0%, #060606 55%, #030304 100%);
+  color: #f8f8f8;
+  font-family: Arial, "Segoe UI", sans-serif;
+  padding: 75px 24px 70px;
+}
+.core-login-content { position: relative; z-index: 1; margin: auto; width: min(100%, 800px); }
+.core-login-brand { display: flex; align-items: center; justify-content: center; gap: 30px; white-space: nowrap; margin-bottom: 63px; height: 95px; font-size: 68px; font-weight: 700; letter-spacing: -2px; }
+.core-login-brand strong { color: #ff7900; font-weight: 700; }
+.core-login-symbol { display: block; position: relative; width: 96px; height: 96px; flex-shrink: 0; }
+.core-login-symbol i { position: absolute; display: block; border-radius: 50%; background: linear-gradient(145deg, #ffa800, #ff5b00); box-shadow: inset 0 0 2px #ffc04e; }
+.core-login-symbol i:nth-child(1) { width: 62px; height: 62px; top: 0; right: 0; }
+.core-login-symbol i:nth-child(2) { width: 36px; height: 36px; top: 53px; left: 17px; }
+.core-login-symbol i:nth-child(3) { width: 19px; height: 19px; bottom: 0; left: 0; }
+.core-login-brand-divider { height: 87px; width: 1px; background: #aaa; flex-shrink: 0; }
+.core-login-card { position: relative; border: 3px solid transparent; border-radius: 43px; padding: 36px 68px 55px; text-align: center; background: linear-gradient(145deg, #242424, #080808 55%, #111) padding-box, linear-gradient(160deg, #ff9856, #888 10%, #3b3b3b 49%, #603721 90%, #fe7930) border-box; box-shadow: 0 0 65px #ff5b0012, inset 0 0 55px #ffffff04; }
+.core-login-card::before, .core-login-card::after { content: ""; position: absolute; height: 2px; left: 12%; right: 12%; pointer-events: none; background: linear-gradient(90deg, transparent, #ff6300 25%, #fff5be 50%, #ff6300 75%, transparent); box-shadow: 0 0 7px #ff7100, 0 0 21px #ff5900; }
+.core-login-card::before { top: -2px; }.core-login-card::after { bottom: -2px; }
+.core-login-lock { margin: 0 auto 9px; display: grid; place-items: center; width: 81px; height: 81px; border: 3px solid #ff9500; border-radius: 23px; background: linear-gradient(135deg, #1d1607, #572000); color: #ff9500; box-shadow: 0 0 15px #ff6500aa, inset 0 0 14px #ff690055; }
+.core-login-lock svg { width: 43px; height: 43px; stroke-width: 2; }
+.core-login-card h1 { font-size: 56px; line-height: 1.2; font-weight: 700; letter-spacing: -1.8px; margin: 0; }
+.core-login-card h1 span { color: #ff7900; }
+.core-login-subtitle { margin: 8px 0 30px; font-size: 24px; line-height: 1.45; color: #e2e2e2; }
+.core-login-form { display: flex; flex-direction: column; gap: 20px; }
+.core-login-field { display: flex; align-items: center; gap: 22px; min-height: 72px; padding: 0 23px; border: 2px solid #424242; border-radius: 19px; background: linear-gradient(120deg, #242424, #131313 45%, #202020); box-shadow: inset 0 0 0 1px #ffffff05; }
+.core-login-field:focus-within { border-color: #ff9400; }
+.core-login-field > svg { flex-shrink: 0; height: 33px; width: 33px; color: #ddd; stroke-width: 1.8; }
+.core-login-field input { width: 100%; min-width: 0; height: 68px; background: transparent; color: #fff; font-size: 25px; outline: none; border: 0; box-shadow: none; }
+.core-login-field input::placeholder { color: #bbb; opacity: 1; }
+.core-login-field input:focus-visible { outline: none; }
+.core-login-field input:-webkit-autofill { -webkit-text-fill-color: #fff; box-shadow: 0 0 0 100px #202020 inset; caret-color: #fff; }
+.core-login-eye { display: grid; place-items: center; flex-shrink: 0; padding: 8px; margin-right: -10px; color: #ccc; border-radius: 8px; cursor: pointer; }
+.core-login-eye svg { width: 30px; height: 30px; stroke-width: 1.8; }
+.core-login-eye:hover { color: #ff9700; }
+.core-login-form > button { position: relative; margin-top: 9px; min-height: 76px; border-radius: 23px; background: linear-gradient(110deg, #ffae00, #ff7900 45%, #f34400); box-shadow: inset 0 1px 2px #ffc866, 0 9px 25px #0008; color: #fff; font-size: 29px; font-weight: 700; cursor: pointer; }
+.core-login-form > button svg { position: absolute; right: 29px; top: 50%; transform: translateY(-50%); width: 33px; height: 33px; }
+.core-login-form > button:hover { filter: brightness(1.08); }.core-login-form > button:disabled { cursor: wait; opacity: .65; }
+.core-login-error { text-align: left; color: #ffe0c0; background: #45200c; border-left: 3px solid #ff9400; padding: 12px 16px; border-radius: 8px; font-size: 15px; }
+@media (max-width: 700px) {
+  .core-login { padding: 46px 20px; display: grid; align-items: center; }
+  .core-login-brand { font-size: clamp(29px, 7vw, 48px); gap: 16px; height: 65px; margin-bottom: 35px; letter-spacing: -1px; }
+  .core-login-symbol { transform: scale(.6); width: 96px; height: 96px; transform-origin: center; margin-inline: -19px; }
+  .core-login-brand-divider { height: 54px; }
+  .core-login-card { padding: 28px 23px 32px; border-radius: 29px; }
+  .core-login-lock { width: 65px; height: 65px; border-radius: 19px; }
+  .core-login-card h1 { font-size: clamp(27px, 6.8vw, 40px); letter-spacing: -.8px; }
+  .core-login-subtitle { font-size: 16px; margin: 12px 0 25px; }
+  .core-login-field { min-height: 59px; padding: 0 14px; gap: 12px; border-radius: 14px; }
+  .core-login-field input { height: 55px; font-size: 18px; }
+  .core-login-field > svg, .core-login-eye svg { width: 25px; height: 25px; }
+  .core-login-form { gap: 15px; }
+  .core-login-form > button { min-height: 60px; font-size: 22px; border-radius: 16px; }
+  .core-login-form > button svg { right: 18px; width: 26px; }
+}
+
+.core-login-art { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; filter: drop-shadow(0 0 28px #eb5b0028); }

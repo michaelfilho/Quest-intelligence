@@ -1,0 +1,19 @@
+/* Tabelas de jobs preservam todas as colunas em desktop; em mobile, rolam dentro do painel. */
+.project-table table{table-layout:fixed;min-width:940px}
+.project-table td:first-child{min-width:0}
+.project-table th{white-space:normal;letter-spacing:.35px}
+.project-table th button{white-space:normal;gap:3px;text-align:inherit}
+.project-table td,.project-table th{padding:12px 9px}
+.project-table td .cell-link{margin:-12px -9px;padding:12px 9px}
+.project-table td:last-child{padding-left:4px;padding-right:4px}
+.project-table td:last-child .button{padding:4px}
+.project-table th:nth-child(1){width:7%}.project-table th:nth-child(2){width:25%}.project-table th:nth-child(3){width:10%}.project-table th:nth-child(4){width:13%}.project-table th:nth-child(5){width:12%}.project-table th:nth-child(6){width:12%}.project-table th:nth-child(7){width:8%}.project-table th:nth-child(8){width:9%}.project-table th:nth-child(9){width:4%}
+.project-table.with-department th:nth-child(1){width:7%}.project-table.with-department th:nth-child(2){width:19%}.project-table.with-department th:nth-child(3){width:12%}.project-table.with-department th:nth-child(4){width:9%}.project-table.with-department th:nth-child(5){width:12%}.project-table.with-department th:nth-child(6){width:10%}.project-table.with-department th:nth-child(7){width:11%}.project-table.with-department th:nth-child(8){width:7%}.project-table.with-department th:nth-child(9){width:9%}.project-table.with-department th:nth-child(10){width:4%}
+.filter-bar>.search-box+select{flex:0 1 auto;min-width:140px}
+/* Densidade de desktop baseada nas referências; dispositivos menores mantêm o layout responsivo. */
+@media(min-width:1401px){
+ .sidebar{width:210px}.workspace{margin-left:210px}.brand{height:76px;padding:0 20px}.brand-symbol{width:34px;height:34px;font-size:22px}.brand strong{font-size:18px}.brand small{font-size:7px}.brand strong b{font-size:8px;padding:5px}
+ header{height:49px;padding:0 20px}.workspace main{max-width:1040px;padding:25px 24px 40px}.workspace footer{padding:11px 20px;font-size:8px}.sidebar-search{margin-top:12px}.nav-item{font-size:11px;padding:9px 11px;min-height:34px}.group-title{font-size:8px}.nav-group{margin-bottom:5px}.demo-card{padding:12px}.sidebar-user{padding:12px 15px}
+ .executive-banner{padding:17px;margin-bottom:19px}.executive-banner h1{font-size:14px}.executive-banner p{font-size:9px}.executive-banner .badge{font-size:8px;padding:7px}.stats-grid{gap:12px;margin-bottom:19px}.stat{min-height:88px;padding:13px 12px}.stat-label{font-size:9px}.stat strong{font-size:17px;margin:5px 0 6px}.stat-note{font-size:8px}.panel{padding:17px;margin-bottom:19px}.panel-heading{margin-bottom:13px}.panel-heading h2{font-size:12px}.panel-heading p{font-size:9px}.panel-heading>small{font-size:9px}.two-columns{gap:19px}.alerts-grid{gap:10px}.alert-card{padding:10px;min-height:81px}.alert-card strong{font-size:9px}.alert-card p{font-size:9px}.alert-card .badge{font-size:7px}.ranking.panel{padding:17px 0 0}.ranking .panel-heading{padding:0 17px}.ranking-row{padding:12px 17px;min-height:53px}.ranking-row strong{font-size:9px}.ranking-row small{font-size:8px}.rank-number{width:20px;height:20px;font-size:9px}.rank-value strong{font-size:9px}.text-link{font-size:10px}.four-columns{gap:12px;margin-bottom:19px}.commercial-notices a{font-size:11px;padding:10px}.commercial-notices span{font-size:9px}.panel>.table-wrap{margin-left:-17px;margin-right:-17px;margin-bottom:-17px;width:calc(100% + 34px)}
+ .page-title{margin-bottom:20px}.page-title h1{font-size:17px}.page-title p{font-size:10px}.filter-bar{padding:13px;margin-bottom:19px}.filter-bar .search-box{max-width:280px}.filter-bar select{font-size:10px}th{padding:13px 12px;font-size:8px}td{padding:15px 12px;font-size:10px}td strong{font-size:10px}td small{font-size:8px}td .cell-link{margin:-15px -12px;padding:15px 12px}.job-code{font-size:9px!important}
+}

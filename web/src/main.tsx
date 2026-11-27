@@ -9,6 +9,10 @@ import { EmptyState, ErrorState, Skeleton } from "./components/ui";
 import "./index.css";
 import { ApiError, useMe } from "./lib";
 import { AccountPage, ForcedPasswordPage, LoginPage } from "./pages/AuthPages";
+import { sanitizeTrackingUrl } from './tracking-url';
+
+// O Router deve observar apenas a URL já sanitizada, inclusive no login.
+sanitizeTrackingUrl();
 
 // Páginas carregadas sob demanda (bundle inicial menor; gráficos só quando necessários).
 const named = <K extends string>(load: () => Promise<Record<K, React.ComponentType<any>>>, name: K) => lazy(() => load().then((m) => ({ default: m[name] })));

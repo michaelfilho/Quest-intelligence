@@ -11,6 +11,7 @@ sql
 .web.log
 backup
 server/data
+backend/data
 e2e
 scripts
 .git

@@ -69,18 +69,47 @@ const desk = await newPage({ width: 1440, height: 900 });
 const p = desk.page;
 
 await check("login: tela de entrada", async () => {
-  await p.goto(BASE + "/");
-  await p.getByRole("heading", { name: "Entrar" }).waitFor();
+  await p.setViewportSize({ width: 1672, height: 941 });
+  await p.goto(BASE + "/?utm_source=chatgpt.com");
+  await p.getByRole("heading", { name: "Acesso Restrito" }).waitFor();
+  if(p.url()!==BASE.replace(/\/$/,'')+'/')throw new Error('rastreador não removido do exemplo');
   await shot(p, "01-login");
+  await p.setViewportSize({ width: 1440, height: 900 });
+});
+await check('URL: limpa antes do Router e preserva filtros, rota, fragmento e histórico',async()=>{
+  await p.addInitScript(()=>{
+    const original=history.replaceState.bind(history);
+    window.__urlReplacements=[];
+    history.replaceState=(state,title,url)=>{window.__urlReplacements.push({before:location.href,url:String(url),state,length:history.length});return original(state,title,url);};
+  });
+  let documents=0;const count=request=>{if(request.isNavigationRequest()&&request.frame()===p.mainFrame())documents++;};
+  p.on('request',count);
+  await p.goto(BASE+'/projetos/123?utm_source=x&start=2026-01-01&client=10&gclid=y#atividade');
+  await p.getByRole('heading',{name:'Acesso Restrito'}).waitFor();
+  const records=await p.evaluate(()=>window.__urlReplacements);
+  const expected=new URL(BASE+'/projetos/123?start=2026-01-01&client=10#atividade');
+  if(p.url()!==expected.href||documents!==1)throw new Error('rota/filtros/fragmento alterados ou página recarregada');
+  if(records[0]?.url!==expected.pathname+expected.search+expected.hash||records[0]?.state!==null)throw new Error('limpeza não precedeu inicialização do Router');
+  if(await p.evaluate(()=>history.length)!==records[0].length)throw new Error('limpeza adicionou entrada ao histórico');
+  p.off('request',count);await p.goto(BASE+'/');
+});
+await check('login: senha visível por ação explícita e layout no celular',async()=>{
+  const password=p.getByLabel('Senha',{exact:true});await password.fill('Teste-local-123');
+  if(await password.getAttribute('type')!=='password')throw new Error('senha exposta inicialmente');
+  await p.getByRole('button',{name:'Mostrar senha',exact:true}).click();
+  if(await password.getAttribute('type')!=='text'||await password.inputValue()!=='Teste-local-123')throw new Error('alternância alterou a senha');
+  await p.getByRole('button',{name:'Ocultar senha',exact:true}).click();await password.fill('');
+  await p.setViewportSize({width:390,height:844});await noOverflow(p);await shot(p,'01-login-mobile');
+  await p.setViewportSize({width:1440,height:900});
 });
 await check("login: credenciais inválidas exibem mensagem genérica", async () => {
   await p.getByLabel("Usuário").fill(ADMIN);
-  await p.getByLabel("Senha").fill("senha-errada-123");
+  await p.getByLabel("Senha", { exact: true }).fill("senha-errada-123");
   await p.getByRole("button", { name: "Entrar" }).click();
   await p.getByText("Usuário ou senha inválidos.").waitFor();
 });
 await check("primeiro acesso: troca obrigatória da senha temporária", async () => {
-  await p.getByLabel("Senha").fill(ADMIN_TEMP);
+  await p.getByLabel("Senha", { exact: true }).fill(ADMIN_TEMP);
   await p.getByRole("button", { name: "Entrar" }).click();
   await shot(p, "02-troca-senha-obrigatoria");
   await changePassword(p, ADMIN_TEMP, ADMIN_PW);
@@ -236,7 +265,7 @@ await check("perfil restrito: troca de senha, menu filtrado e bloqueio por padr�
   const r = rest.page;
   await r.goto(BASE + "/");
   await r.getByLabel("Usuário").fill("analista.homolog");
-  await r.getByLabel("Senha").fill(restrictedTemp);
+  await r.getByLabel("Senha", { exact: true }).fill(restrictedTemp);
   await r.getByRole("button", { name: "Entrar" }).click();
   await changePassword(r, restrictedTemp, "Analista-Homolog-2026!");
   const nav = r.getByRole("navigation", { name: "Módulos" });
@@ -256,7 +285,7 @@ await check("perfil restrito: troca de senha, menu filtrado e bloqueio por padr�
 await check("logout encerra a sessão", async () => {
   await rest.page.goto(BASE + "/");
   await rest.page.getByRole("button", { name: "Sair" }).first().click();
-  await rest.page.getByRole("heading", { name: "Entrar" }).waitFor();
+  await rest.page.getByRole("heading", { name: "Acesso Restrito" }).waitFor();
   if ((await rest.ctx.cookies()).some(c => c.name === "rinne_sid")) throw new Error("cookie não removido no mesmo Path");
 });
 
