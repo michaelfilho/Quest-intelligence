@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { test } from "node:test";
-import { mkdtempSync, rmSync,writeFileSync,readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync,writeFileSync,readFileSync } from "node:fs";
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,7 +81,8 @@ test('CLI com marcador vazio prepara build com revisão, preservando imagens de 
   const script=readFileSync(new URL('../../deploy/render-release.cjs',import.meta.url),'utf8'),sha='b'.repeat(40);
   const r=spawnSync(process.execPath,['-e',script,'--','--prepare-release','/opt/apps/quest-rinne-web-runtime/.releases/test','{}',sha],{input:JSON.stringify({config:source,containers}),encoding:'utf8'});
   assert.equal(r.status,0,r.stderr);const output=JSON.parse(r.stdout);
-  assert.ok(output.services.api.build);assert.ok(!output.services.api.image);assert.equal(output.services.api.build.args.RINNE_COMMIT_SHA,sha);
+  assert.ok(output.services.api.build);assert.equal(output.services.api.image,'quest-rinne-release-api:test');assert.equal(output.services.web.image,'quest-rinne-release-web:test');
+  assert.equal(output.services.web.build.dockerfile,'frontend/Dockerfile');assert.equal(output.services.api.build.args.RINNE_COMMIT_SHA,sha);
   assert.ok(!r.stdout.includes('fixture-readonly'));
   assert.throws(()=>renderRelease(source,'/opt/apps/quest-rinne-web-runtime/.releases/test',{api:'old'}),/incompletas/);
 });
@@ -90,4 +91,18 @@ test('retomada verifica identidade e integridade antes de sair, sem refazer back
   assert.ok(resume?.includes('prepared.sha'));assert.ok(resume?.includes('source.sha256'));assert.ok(resume?.includes('app.db.sha256'));assert.ok(resume?.includes('exit 0'));assert.ok(!resume?.includes('VACUUM'));
   const check=readFileSync(new URL('../../deploy/check-release.sh',import.meta.url),'utf8');
   assert.ok(check.includes('code.sha256'));assert.ok(check.includes('org.opencontainers.image.revision'));assert.ok(check.includes('web-assets.sha256'));assert.ok(!/up -d|rollback\.private/.test(check));
+});
+
+test('label de roteamento do container ausente do Compose interrompe a preparação',()=>{
+  const source=config();const containers=['api','web'].map(service=>({Config:{Labels:{'com.docker.compose.service':service,'com.docker.compose.project':'quest-rinne-web',...(service==='web'?{'traefik.test':'preservar','traefik.http.routers.x.middlewares':'quest-rinne-web-tailscale-only'}:{})},Env:Object.entries(source.services[service as 'api'|'web'].environment).map(([k,v])=>`${k}=${v}`)},Mounts:service==='api'?[{Destination:'/app/server/data',Source:'/opt/private/data'}]:[]}));
+  assert.throws(()=>verifyRunning(source,containers),/Label atual ausente.*middlewares/);
+});
+test('imagens e Compose compilam a interface consolidada; scripts descobrem API e Web e fazem rollback',()=>{
+  const file=(name:string)=>readFileSync(new URL('../../'+name,import.meta.url),'utf8');
+  for(const compose of ['docker-compose.yml','docker-compose.prod.yml']){assert.ok(file(compose).includes('frontend/Dockerfile'));assert.ok(!file(compose).includes('web/Dockerfile'));}
+  for(const dockerfile of ['frontend/Dockerfile','server/Dockerfile'])for(const [,sources] of file(dockerfile).matchAll(/^COPY (?!--from)(?:--chmod=\d+ )?(.+) \S+\r?$/gm))for(const source of sources.split(' '))assert.ok(existsSync(new URL('../../'+source,import.meta.url)),dockerfile+': '+source);
+  for(const gone of ['web/package.json','backend/package.json'])assert.ok(!existsSync(new URL('../../'+gone,import.meta.url)),gone);
+  const prepare=file('deploy/prepare-release.sh');assert.ok(prepare.includes('union config_files'));assert.ok(prepare.includes('label "$c"'));
+  const update=file('deploy/update.sh');for(const part of ['prepare-release.sh','check-release.sh','rollback.private.json','app.db.sha256','main "$@" < /dev/null'])assert.ok(update.includes(part),part);
+  assert.ok(!/down -v|git reset|git clean|volume rm/.test(update));
 });

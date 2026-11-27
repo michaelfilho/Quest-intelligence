@@ -8,6 +8,8 @@ async function check(fetcher=fetch) {
   if (data.database!=='CONNECTED') throw new Error('PostgreSQL indisponível');
   const session=await fetcher(`${base}/api/auth/me`);
   if (session.status!==401) throw new Error('Proteção de sessão inesperada');
+  const data_=await fetcher(`${base}/api/modules`);
+  if (data_.status!==401) throw new Error('Rota de dados sem autenticação');
   console.log(JSON.stringify({internalHealth:'OK',authentication:'REQUIRED'}));
 }
 module.exports={check};

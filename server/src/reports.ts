@@ -105,7 +105,7 @@ type Col = { key: string; label: string; type: string };
 
 function header(r: Report): string[][] {
   return [
-    ["QUEST RINNE — " + r.title],
+    ["QUEST INTELLIGENCE — " + r.title],
     ["Período", `${r.period.start} a ${r.period.end}`],
     ["Gerado em", new Date(r.generatedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })],
     ["Gerado por", r.generatedBy],
@@ -140,7 +140,7 @@ export function toXlsx(r: Report) {
 }
 
 export function toMarkdown(r: Report) {
-  const L = [`# QUEST RINNE — ${r.title}`, "", ...header(r).slice(1).map(([k, v]) => `- **${k}:** ${v}`), ""];
+  const L = [`# QUEST INTELLIGENCE — ${r.title}`, "", ...header(r).slice(1).map(([k, v]) => `- **${k}:** ${v}`), ""];
   if (!r.dataAvailable) L.push("> **DADOS INDISPONÍVEIS.** Este relatório não contém valores calculados e não deve ser usado como demonstrativo.", "");
   if (r.indicators.length) {
     L.push("## Indicadores", "", "| Indicador | Valor | Confiabilidade | Base | Origem |", "|---|---|---|---|---|");

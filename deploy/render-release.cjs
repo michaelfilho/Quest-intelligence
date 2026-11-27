@@ -12,7 +12,8 @@ function renderRelease(config, stage, previousImages, revision, reconciled = {})
       if(service==='api'&&reconciled.api)override.services.api.environment={...reconciled.api};
       continue;
     }
-    override.services[service] = { build: { context: stage, dockerfile: `${service === 'api' ? 'server' : 'web'}/Dockerfile`,
+    // Tag própria por release: o build nunca sobrescreve a imagem em uso nem as de rollback.
+    override.services[service] = { image: `quest-rinne-release-${service}:${path.basename(stage)}`, build: { context: stage, dockerfile: `${service === 'api' ? 'server' : 'frontend'}/Dockerfile`,
       args: {...(service === 'web' ? { VITE_BASE_PATH: '/core/' } : {}),...(revision?{RINNE_COMMIT_SHA:revision}:{})} } };
     if (!s.environment || Array.isArray(s.environment)) throw new Error('Compose precisa estar normalizado com environment em objeto');
     if (service === 'api') override.services.api.environment = { APP_BASE_PATH: '/core/',...(reconciled.api??{}) };
@@ -59,6 +60,10 @@ function verifyRunning(config, containers) {
       const actual = running.Config.Labels[key];
       if (String(value) !== actual && String(value).replace(/\$\$/g, '$') !== actual) throw new Error('Label efetiva diverge: ' + service + '/' + key);
       config.services[service].labels[key] = actual;
+    }
+    // Label de roteamento presente no container e ausente do Compose = override esquecido (ex.: Tailscale only).
+    for (const key of Object.keys(running.Config.Labels)) {
+      if (key.startsWith('traefik.') && !Object.hasOwn(config.services[service].labels ?? {}, key)) throw new Error('Label atual ausente do Compose: ' + service + '/' + key);
     }
     if (running.NetworkSettings?.Networks) {
       const configured = config.services[service].networks ?? {default:null};

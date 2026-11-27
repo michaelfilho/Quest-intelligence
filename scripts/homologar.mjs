@@ -9,7 +9,7 @@ import { createServer } from 'node:net';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'rinne-homolog-'));
 // Snapshot do build: uma nova compilação/limpeza local não pode mudar o artefato sob teste.
-cpSync(join(root,'web/dist'),join(dir,'dist'),{recursive:true});
+cpSync(join(root,'frontend/dist'),join(dir,'dist'),{recursive:true});
 const apiPort = Number(process.env.HOMOLOG_API_PORT ?? 3334);
 const webPort = Number(process.env.HOMOLOG_WEB_PORT ?? 4174);
 const basePath = process.env.VITE_BASE_PATH ?? '/';
@@ -37,10 +37,10 @@ try {
   if (!password) throw new Error('senha temporária não gerada');
   for (const [name, args] of [
     ['api', ['server/node_modules/tsx/dist/cli.mjs',analyticsFixture?'server/test/serve-management-fixture.ts':'server/src/index.ts']],
-    ['web', [join(root, 'web/node_modules/vite/bin/vite.js'), 'preview', '--outDir',join(dir,'dist'),'--host', '127.0.0.1', '--port', String(webPort), '--strictPort']],
+    ['web', [join(root, 'frontend/node_modules/vite/bin/vite.js'), 'preview', '--outDir',join(dir,'dist'),'--host', '127.0.0.1', '--port', String(webPort), '--strictPort']],
   ]) {
     const log = openSync(join(dir, `${name}.log`), 'a');
-    const p = run(args, { cwd: name === 'web' ? join(root, 'web') : root, stdio: ['ignore', log, log] });
+    const p = run(args, { cwd: name === 'web' ? join(root, 'frontend') : root, stdio: ['ignore', log, log] });
     children.push(p);
   }
   const base = `http://127.0.0.1:${webPort}${basePath === '/' ? '' : basePath.replace(/\/$/, '')}`;

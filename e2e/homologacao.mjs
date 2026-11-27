@@ -34,6 +34,15 @@ async function newPage(viewport, storageState) {
   return { ctx, page };
 }
 
+// Os grupos do menu começam recolhidos: abre todos antes de procurar um item.
+const openMenu = async (p) => {
+  const nav = p.getByRole("navigation", { name: "Módulos" });
+  await nav.waitFor();
+  const closed = nav.locator('button[aria-expanded="false"]');
+  while (await closed.count()) await closed.first().click();
+  return nav;
+};
+
 async function check(name, fn) {
   label = name;
   const t = Date.now();
@@ -168,16 +177,32 @@ await check("tabela sem banco: indisponibilidade clara sem simular linhas", asyn
 });
 await check("filtros globais: período e comparação persistem na URL entre módulos", async () => {
   await p.goto(BASE + "/");
-  await p.getByLabel("Período").selectOption({ label: "Ano atual" });
+  await p.getByLabel("Período", { exact: true }).selectOption({ label: "Ano atual" });
   await settle(p);
   const tableReads = requested.filter(path => path.includes("/api/tables/")).length;
   await p.getByLabel("Comparar com período anterior").check();
   await settle(p);
   if (requested.filter(path => path.includes("/api/tables/")).length !== tableReads) throw new Error("comparação duplicou consultas de linhas atuais");
   if (!/start=\d{4}-01-01/.test(p.url()) || !p.url().includes("compare=1")) throw new Error("URL sem filtros: " + p.url());
-  await p.getByRole("link", { name: "Financeiro" }).click();
+  await (await openMenu(p)).getByRole("link", { name: "Dashboard Financeiro" }).click();
   await settle(p);
   if (!p.url().includes("compare=1")) throw new Error("filtros perdidos na navegação");
+});
+
+await check("telas do design: reais abrem e sem fonte informam indisponibilidade", async () => {
+  for (const path of ["/indicadores-estrategicos", "/rentabilidade-consolidada", "/categorias-servicos", "/rentabilidade-comercial", "/integracoes", "/pecas-atividades", "/capacidade-operacional", "/refacoes-alteracoes", "/receitas-despesas", "/custos-operacionais", "/orcado-realizado", "/analises-comparativas", "/regras-rateio", "/plano-contas", "/controle-acesso", "/permissoes", "/auditoria", "/central-alertas"]) {
+    await p.goto(BASE + path);
+    await p.locator("main h1").waitFor();
+    await settle(p);
+    if (await p.getByText("Página não encontrada").count()) throw new Error("rota ausente: " + path);
+    if (await p.locator("text=/R\\$\\s?\\d/").count()) throw new Error("valor monetário sem banco: " + path);
+  }
+  for (const path of ["/marcas", "/fees-jobs-extras", "/diagnosticos", "/assistente-ia", "/metas-parametros"]) {
+    await p.goto(BASE + path);
+    await p.getByText("Informação indisponível").waitFor();
+  }
+  await p.goto(BASE + "/marcas");
+  await shot(p, "indisponivel");
 });
 
 await check("Relatórios: pré-visualização honesta e exportação XLSX/CSV/MD", async () => {
@@ -252,7 +277,7 @@ await check("celular 390×844: menu, telas principais e ausência de rolagem hor
   }
   await mob.page.goto(BASE + "/");
   await mob.page.getByRole("button", { name: "Abrir menu" }).click();
-  await mob.page.getByRole("navigation", { name: "Módulos" }).getByRole("link", { name: "Financeiro" }).waitFor();
+  await (await openMenu(mob.page)).getByRole("link", { name: "Dashboard Financeiro" }).waitFor();
   await shot(mob.page, "celular-menu-aberto");
   // O centro do botão de fechar fica sob o painel aberto: o toque do usuário é na área escurecida, à direita.
   await mob.page.getByRole("button", { name: "Fechar menu" }).click({ position: { x: 350, y: 400 } });
@@ -268,10 +293,9 @@ await check("perfil restrito: troca de senha, menu filtrado e bloqueio por padr�
   await r.getByLabel("Senha", { exact: true }).fill(restrictedTemp);
   await r.getByRole("button", { name: "Entrar" }).click();
   await changePassword(r, restrictedTemp, "Analista-Homolog-2026!");
-  const nav = r.getByRole("navigation", { name: "Módulos" });
-  await nav.waitFor();
-  for (const forbidden of ["Financeiro", "Rentabilidade", "Configurações"]) if (await nav.getByRole("link", { name: forbidden, exact: true }).count()) throw new Error(`item proibido no menu: ${forbidden}`);
-  for (const allowed of ["Produção", "Projetos", "Integrações e Qualidade"]) await nav.getByRole("link", { name: allowed }).waitFor();
+  const nav = await openMenu(r);
+  for (const forbidden of ["Dashboard Financeiro", "Rentabilidade", "Configurações", "Controle de Acesso", "DRE Gerencial"]) if (await nav.getByRole("link", { name: forbidden, exact: true }).count()) throw new Error(`item proibido no menu: ${forbidden}`);
+  for (const allowed of ["Produção", "Projetos / Jobs", "Qualidade dos Dados"]) await nav.getByRole("link", { name: allowed, exact: true }).waitFor();
   await shot(r, "restrito-menu");
   for (const path of ["/financeiro", "/rentabilidade", "/configuracoes"]) {
     await r.goto(BASE + path);

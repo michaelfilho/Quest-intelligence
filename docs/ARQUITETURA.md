@@ -48,7 +48,7 @@ shared/      catalog.ts · contracts.ts · permissions.ts
 server/src/  app.ts · auth.ts / authz.ts / admin.ts · access.ts (IP) · store.ts (SQLite) · db.ts (PostgreSQL RO)
              services.ts · mappings.ts · reports.ts · xlsx.ts · filters.ts · introspect.ts · cli.ts
 server/migrations/  001_auth.sql · 002_rinne_n8n_meetings.sql (histórica) · 003_remove_ai_voice_meetings.sql
-web/src/     main.tsx (rotas sob demanda) · lib.ts · nav.ts · components/ · pages/
+frontend/src/main.tsx (rotas sob demanda) · lib.ts · nav.ts · components/ · pages/
 ```
 
 ## Performance

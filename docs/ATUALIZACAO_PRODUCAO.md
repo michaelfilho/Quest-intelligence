@@ -1,8 +1,21 @@
-# Atualização da instalação existente — execução manual posterior
+# Atualização da instalação existente
 
-Este procedimento foi preparado e testado localmente quanto à transformação de configuração, proteções de volumes/ambiente e backup SQLite. **Não foi executado na VPS nem em Docker real nesta tarefa.** A publicação no GitHub não executa deploy.
+## Comando único
 
-A fonte informada fica em `/opt/apps/quest-rinne-web`; o runtime com ajustes locais fica em `/opt/apps/quest-rinne-web-runtime`. Não copiar o repositório por cima do runtime nem substituir seu `.env`, Compose, volumes, nginx customizado ou SQLite.
+Na VPS, em uma sessão Bash com permissão para Docker, `/opt/apps` e `/opt/backups`:
+
+```bash
+cd /opt/apps/quest-rinne-web && git fetch origin && git show origin/main:deploy/update.sh | bash
+```
+
+Ele prepara (backup consistente do SQLite, tags de rollback, descoberta dos arquivos Compose **da API e do Web**, conferência de ambiente, volumes, redes, portas e labels), constrói, sobe somente `api` e `web`, valida (revisão e hashes das imagens, interface QUEST INTELLIGENCE em `/core/` sem dados demonstrativos, PostgreSQL conectado, sessão e rotas de dados protegidas) e, **se falhar, volta sozinho** para as imagens anteriores mantendo o SQLite atual.
+
+- Só preparar, sem publicar: `... | bash -s -- --prepare-only`
+- Commit específico: `... | bash -s -- <SHA completo>`
+
+O Docker, o nginx e este comando ainda **não foram executados na VPS**. Os arquivos de ambiente, o Traefik (`quest-rinne-web-tailscale-only`), o Tailscale, a porta 18372, o PostgreSQL e o n8n não são alterados. A fonte fica em `/opt/apps/quest-rinne-web`; o runtime com ajustes locais, em `/opt/apps/quest-rinne-web-runtime`.
+
+O restante deste documento detalha cada etapa, para execução manual ou diagnóstico.
 
 ## 1. Buscar o commit e preparar, sem implantar
 

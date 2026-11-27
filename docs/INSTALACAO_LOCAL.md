@@ -9,7 +9,7 @@
 ## Instalação
 
 ```bash
-npm run setup              # instala server/, web/ e e2e/ com os lockfiles
+npm run setup              # instala server/, frontend/ e e2e/ com os lockfiles
 cp .env.example .env       # opcional; sem .env a API sobe sem banco
 ```
 

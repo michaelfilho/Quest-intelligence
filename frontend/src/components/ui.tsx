@@ -1,23 +1,118 @@
-import { useState, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowUpDown, ChevronRight, Download, Search } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts';
-import { Button } from './ui/button';
-import { money, number } from '../lib';
-export { Button };
-export function PageTitle({title,description,children}:{title:string;description:string;children?:ReactNode}){return <div className="page-title"><div><h1><span className="title-mark"/>{title}</h1><p>{description}</p></div><div className="title-actions">{children}</div></div>;}
-export function Panel({title,subtitle,children,action,className=''}:{title?:string;subtitle?:string;children:ReactNode;action?:ReactNode;className?:string}){return <section className={`panel ${className}`}>{title&&<div className="panel-heading"><div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>}{children}</section>;}
-export function Badge({children,tone='green'}:{children:ReactNode;tone?:string}){return <span className={`badge ${tone}`}>{children}</span>;}
-export function Status({value}:{value:string}){return <Badge tone={value==='atrasado'?'red':value==='concluído'||value==='inativo'||value==='encerrado'?'gray':value==='em prospecção'?'blue':'green'}>{value}</Badge>;}
-export function Stat({title,value,note,path,tone=''}:{title:string;value:ReactNode;note?:string;path?:string;tone?:string}){const body=<><span className="stat-label">{title}</span><strong className={tone}>{value}</strong><span className="stat-note">{note??'Dados demonstrativos'}{path&&<ChevronRight size={13}/>}</span></>;return path?<Link className="stat" to={path}>{body}</Link>:<div className="stat">{body}</div>;}
-export function SearchBox({value,onChange,placeholder='Pesquisar...'}:{value:string;onChange:(s:string)=>void;placeholder?:string}){return <label className="search-box"><Search size={15}/><input aria-label={placeholder} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}/></label>;}
-export function Select({value,onChange,label,options}:{value:string;onChange:(s:string)=>void;label:string;options:{value:string;label:string}[]}){return <select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}><option value="">{label}</option>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>;}
-export interface Column<T>{key:string;label:string;render:(row:T)=>ReactNode;value?:(row:T)=>string|number|null;numeric?:boolean}
-export function Table<T extends {id:string}>({rows,columns,path,empty='Nenhum registro encontrado para os filtros selecionados.'}:{rows:T[];columns:Column<T>[];path?:(r:T)=>string;empty?:string}){
- const [sort,setSort]=useState<{key:string;dir:number}>({key:'',dir:1});const navigate=useNavigate();
- const current=columns.find(c=>c.key===sort.key);const sorted=current?.value?[...rows].sort((a,b)=>{const x=current.value!(a),y=current.value!(b);return sort.dir*(typeof x==='number'&&typeof y==='number'?x-y:String(x??'').localeCompare(String(y??''),'pt-BR'));}):rows;
- return <div className={`table-wrap ${columns.some(c=>c.key==='code')?'project-table':''} ${columns.some(c=>c.key==='department')?'with-department':''}`}><table><thead><tr>{columns.map(c=><th key={c.key} className={c.numeric?'numeric':''}>{c.value?<button onClick={()=>setSort({key:c.key,dir:sort.key===c.key?-sort.dir:1})}>{c.label}<ArrowUpDown size={11}/>{sort.key===c.key&&<span>{sort.dir===1?'↑':'↓'}</span>}</button>:c.label}</th>)}{path&&<th>Ações</th>}</tr></thead><tbody>{sorted.map(r=><tr key={r.id}>{columns.map(c=><td key={c.key} className={c.numeric?'numeric':''}>{path?<Link className="cell-link" to={path(r)}>{c.render(r)}</Link>:c.render(r)}</td>)}{path&&<td><Button variant="ghost" size="sm" aria-label="Abrir detalhe" onClick={()=>navigate(path(r))}><ChevronRight size={15}/></Button></td>}</tr>)}</tbody></table>{!rows.length&&<div className="empty">{empty}</div>}</div>;
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import type { Basis, DbState, Reliability } from "../../../shared/contracts";
+import { ApiError, BASIS_LABEL, DB_LABEL, RELIABILITY_LABEL } from "../lib";
+
+const RELIABILITY_STYLE: Record<Reliability, string> = {
+  VALIDADO: "bg-q-ink text-white",
+  PARCIAL: "border border-q-orange text-q-ink",
+  DESATUALIZADO: "border border-dashed border-q-orange text-q-ink",
+  PENDENTE: "bg-q-line text-q-graphite",
+  EM_RECONCILIACAO: "bg-q-orange text-q-ink",
+  INDISPONIVEL: "border border-q-line text-q-mid",
+};
+
+export function ReliabilityBadge({ value }: { value: Reliability }) {
+  return (
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${RELIABILITY_STYLE[value]}`} title="Confiabilidade da fonte">
+      {RELIABILITY_LABEL[value]}
+    </span>
+  );
 }
-export function Chart({rows,series,moneyAxis=false,height=230,labelKey='name'}:{rows:object[];series:{key:string;name:string;color:string}[];moneyAxis?:boolean;height?:number;labelKey?:string}){return <div style={{width:'100%',height}}><ResponsiveContainer width="100%" height="100%"><BarChart data={rows} margin={{top:12,right:8,bottom:6,left:0}}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e9ebef"/><XAxis dataKey={labelKey} tick={{fontSize:10,fill:'#7f8899'}} axisLine={{stroke:'#d6dae1'}} tickLine={false}/><YAxis width={55} tick={{fontSize:10,fill:'#7f8899'}} tickLine={false} axisLine={false} tickFormatter={v=>moneyAxis?`R$${number(Number(v)/1000)}k`:number(v)}/><Tooltip contentStyle={{background:'#101010',border:0,borderRadius:6,color:'white',fontSize:12}} itemStyle={{color:'white'}} formatter={v=>moneyAxis?money(Number(v)):number(Number(v))}/><Legend iconType="square" iconSize={9} wrapperStyle={{fontSize:11,paddingTop:12}}/>{series.map(s=><Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[3,3,0,0]} maxBarSize={34} isAnimationActive={false}/>)}</BarChart></ResponsiveContainer></div>;}
-export function ExportButton({onClick}:{onClick:()=>void}){return <Button onClick={onClick}><Download size={14}/>Exportar CSV</Button>;}
-export function Tabs({items,value,onChange}:{items:string[];value:string;onChange:(s:string)=>void}){return <div className="tabs" role="tablist">{items.map(t=><button key={t} role="tab" aria-selected={value===t} className={value===t?'selected':''} onClick={()=>onChange(t)}>{t}</button>)}</div>;}
+
+export function BasisTag({ value }: { value: Basis }) {
+  return <span className="text-[10px] font-medium uppercase tracking-wide text-q-mid" title="Base temporal do número">{BASIS_LABEL[value]}</span>;
+}
+
+export function DbDot({ state }: { state?: DbState }) {
+  // Conectado: laranja cheio · indisponível: anel laranja · verificando: cinza.
+  const color = state === "CONNECTED" ? "bg-q-orange" : state ? "border border-q-orange" : "bg-q-mid";
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className={`h-2 w-2 rounded-full ${color}`} aria-hidden />
+      <span>{state ? DB_LABEL[state] : "Verificando…"}</span>
+    </span>
+  );
+}
+
+export function Panel({ title, subtitle, actions, children, className = "" }: { title: string; subtitle?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <section className={`panel panel-flush ${className}`}>
+      <header className="panel-heading">
+        <div className="min-w-0">
+          <h3>{title}</h3>
+          {subtitle && <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-q-mid">{subtitle}</div>}
+        </div>
+        {actions}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+export function PageHeader({ title, subtitle, back, right }: { icon?: LucideIcon; title: ReactNode; subtitle?: ReactNode; back?: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="page-title flex-wrap">
+      <div>
+        {back}
+        <h1><span className="title-mark" aria-hidden />{title}</h1>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      {right && <div className="title-actions">{right}</div>}
+    </div>
+  );
+}
+
+export function CountPill({ children }: { children: ReactNode }) {
+  return <span className="num rounded-full border border-q-line bg-white px-3 py-1.5 text-xs font-semibold text-q-ink">{children}</span>;
+}
+
+export function SectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-q-mid">
+      <span className="h-3 w-1 rounded-sm bg-q-orange" aria-hidden />
+      {children}
+    </h2>
+  );
+}
+
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`animate-pulse rounded bg-q-line/70 ${className}`} aria-hidden />;
+}
+
+/** Estado vazio: deixa claro que NÃO é zero. */
+export function EmptyState({ title, reason, compact }: { title: string; reason?: string; compact?: boolean }) {
+  return (
+    <div className={`flex flex-col items-center justify-center text-center ${compact ? "gap-1 px-4 py-6" : "gap-2 px-6 py-12"}`}>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-q-line" aria-hidden>
+        <path d="M3 3v18h18" />
+        <path d="M7 15l4-4 3 3 5-6" strokeDasharray="2 2" />
+      </svg>
+      <p className="text-sm font-medium text-q-graphite">{title}</p>
+      {reason && <p className="max-w-md text-xs text-q-mid">{reason}</p>}
+    </div>
+  );
+}
+
+export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  const e = error instanceof ApiError ? error : null;
+  return (
+    <div role="alert" className="m-4 rounded-md border border-q-line border-l-4 border-l-q-orange bg-white px-4 py-3 text-sm text-q-ink">
+      <p className="font-medium">{e?.message ?? "Erro inesperado ao carregar os dados."}</p>
+      {e?.details?.length ? (
+        <ul className="mt-1 list-disc pl-5 text-xs">
+          {e.details.map((d) => (
+            <li key={d.campo + d.erro}>
+              {d.campo || "parâmetro"}: {d.erro}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {onRetry && (
+        <button onClick={onRetry} className="mt-2 text-xs font-semibold underline">
+          Tentar novamente
+        </button>
+      )}
+    </div>
+  );
+}

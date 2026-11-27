@@ -36,22 +36,22 @@ mkdir -p "$STAGE" "$BACKUP"
 chmod 700 "$STAGE" "$BACKUP"
 git archive "$SHA" | tar -x -C "$STAGE"
 # Manifestos verificam arquivos de origem antes de construir e o código da API instalada.
-while IFS= read -r f; do (cd "$STAGE"; sha256sum -- "$f"); done < <(git ls-tree -r --name-only "$SHA" -- server shared web deploy package.json) > "$STAGE/source.sha256"
+while IFS= read -r f; do (cd "$STAGE"; sha256sum -- "$f"); done < <(git ls-tree -r --name-only "$SHA" -- server shared frontend deploy package.json) > "$STAGE/source.sha256"
 while IFS= read -r f; do (cd "$STAGE"; sha256sum -- "$f"); done < <(git ls-tree -r --name-only "$SHA" -- server/src shared) > "$STAGE/code.sha256"
 
 # Descobrir a configuração efetiva pelas labels, sem presumir os ajustes da cópia runtime.
-WORKDIR="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$API")"
-FILES="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$API")"
-ENVFILES="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.environment_file"}}' "$API")"
-[[ -d "$WORKDIR" && -n "$FILES" && "$FILES" != '<no value>' ]]
+# API e Web podem ter sido recriados com overrides diferentes (ex.: segurança só no Web): unir os dois.
+label() { docker inspect -f "{{index .Config.Labels \"com.docker.compose.project.$2\"}}" "$1"; }
+union() { for c in "$API" "$WEB"; do label "$c" "$1" | tr ',' '\n'; done | awk 'NF && $0 != "<no value>" && !seen[$0]++'; }
+WORKDIR="$(label "$API" working_dir)"
+[[ -d "$WORKDIR" ]]
+[[ "$(label "$WEB" working_dir)" == "$WORKDIR" ]] || { echo 'API e Web usam diretórios Compose diferentes; revisar antes de atualizar' >&2; exit 1; }
+mapfile -t CONFIG_FILES < <(union config_files)
+mapfile -t ENV_FILES < <(union environment_file)
+[[ "${#CONFIG_FILES[@]}" -gt 0 ]]
 COMPOSE=(docker compose -p quest-rinne-web --project-directory "$WORKDIR")
-IFS=',' read -r -a CONFIG_FILES <<< "$FILES"
 for f in "${CONFIG_FILES[@]}"; do [[ -f "$f" ]]; COMPOSE+=(-f "$f"); done
-ENV_FILES=()
-if [[ -n "$ENVFILES" && "$ENVFILES" != '<no value>' ]]; then
-  IFS=',' read -r -a ENV_FILES <<< "$ENVFILES"
-  for f in "${ENV_FILES[@]}"; do [[ -f "$f" ]]; COMPOSE+=(--env-file "$f"); done
-fi
+for f in "${ENV_FILES[@]}"; do [[ -f "$f" ]]; COMPOSE+=(--env-file "$f"); done
 (cd "$WORKDIR"; "${COMPOSE[@]}" config --format json) > "$BACKUP/effective.private.json"
 declare -p COMPOSE > "$STAGE/compose-args.private.sh"
 INPUT_FILES=("${CONFIG_FILES[@]}" "${ENV_FILES[@]}")
@@ -61,11 +61,14 @@ docker inspect "$API" "$WEB" > "$BACKUP/containers.private.json"
 tar --exclude='./.releases' --exclude='./node_modules' --exclude='./.git' -C "$RUNTIME" -czf "$BACKUP/runtime.private.tar.gz" .
 # Comparação privada: identificar hotfixes de código/nginx da cópia runtime antes de substituí-los.
 : > "$BACKUP/runtime-to-release.private.diff"
+# Arquivos de nginx mudaram de web/ para frontend/: comparar com o local em que o runtime ainda os tiver.
 while IFS= read -r f; do
-  if [[ -f "$RUNTIME/$f" && -f "$STAGE/$f" ]]; then
-    diff -u "$RUNTIME/$f" "$STAGE/$f" >> "$BACKUP/runtime-to-release.private.diff" || [[ "$?" == 1 ]]
+  old="$RUNTIME/$f"
+  if [[ ! -f "$old" && "$f" == frontend/* ]]; then old="$RUNTIME/web/${f#frontend/}"; fi
+  if [[ -f "$old" && -f "$STAGE/$f" ]]; then
+    diff -u "$old" "$STAGE/$f" >> "$BACKUP/runtime-to-release.private.diff" || [[ "$?" == 1 ]]
   fi
-done < <(git ls-tree -r --name-only "$SHA" -- server/src shared web/src web/vite.config.ts web/nginx.conf.template web/security-headers.conf web/docker-entrypoint.d server/Dockerfile web/Dockerfile)
+done < <(git ls-tree -r --name-only "$SHA" -- server/src shared frontend/src frontend/vite.config.ts frontend/nginx.conf.template frontend/security-headers.conf frontend/docker-entrypoint.d server/Dockerfile frontend/Dockerfile)
 
 # Backup consistente do SQLite; não abre conexão PostgreSQL.
 # A API existente verifica sua própria conexão. Funciona com allowlist ativa:
@@ -97,4 +100,4 @@ private_input | docker exec -i "$API" node -e "$RENDER" -- --prepare-release "$S
 chmod 600 "$STAGE/compose.override.json" "$STAGE/compose-args.private.sh" "$BACKUP/"*
 printf '%s\n' "$SHA" > "$STAGE/prepared.sha"
 printf 'PREPARADO, sem deploy.\nRelease: %s\nBackup privado: %s\n' "$STAGE" "$BACKUP"
-printf 'Revisar configurações privadas e mounts antes de executar build/up conforme docs/ATUALIZACAO_PRODUCAO.md.\n'
+printf 'Para publicar, use deploy/update.sh (docs/ATUALIZACAO_PRODUCAO.md).\n'

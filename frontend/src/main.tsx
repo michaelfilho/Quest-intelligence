@@ -1,37 +1,114 @@
-import React,{useEffect,useState} from 'react';
-import { createRoot } from 'react-dom/client';
-import { BrowserRouter,Link,Route,Routes } from 'react-router-dom';
-import type { Bootstrap } from '../../backend/src/types';
-import { DataContext } from './context';
-import { demoRoutes } from './demo-routes';
-import './modules.css';
-import { Layout } from './components/Layout';
-import { Button,Panel } from './components/ui';
-import { StrategicIndicators, ConsolidatedProfitability, ManagementAlerts, PiecesActivities } from './pages/Executive';
-import './executive.css';
-import { Dashboard } from './pages/Dashboard';
-import { Brands,BrandDetail,Categories,Clients,ClientDetail,Contracts,ContractDetail,Fees,Integrations,NotFound } from './pages/Commercial';
-import { Projects,ProjectDetail } from './pages/Projects';
-import { Departments,People,Productivity,Timesheet } from './pages/Operations';
-import { Profitability,Reports,Settings } from './pages/Finance';
-import '@fontsource/inter/latin-400.css';
-import '@fontsource/inter/latin-500.css';
-import '@fontsource/inter/latin-600.css';
-import '@fontsource/inter/latin-700.css';
-import './styles.css';
-import './compact.css';
-import { Login } from './pages/Login';
-import { AccessControl } from './pages/AccessControl';
-function App(){const [data,setData]=useState<Bootstrap|null>(null);const [error,setError]=useState('');const [attempt,setAttempt]=useState(0);useEffect(()=>{const controller=new AbortController();fetch('/api/v1/bootstrap',{signal:controller.signal}).then(async r=>{if(r.status===401)window.location.reload();if(!r.ok)throw new Error('A API retornou uma falha.');return r.json();}).then(setData).catch(e=>{if(e.name!=='AbortError')setError('Não foi possível carregar a API local. Verifique se o backend está em execução.');});return ()=>controller.abort();},[attempt]);
- if(error)return <div className="startup"><Panel title="API indisponível"><p>{error}</p><code>npm run dev:api</code><Button onClick={()=>{setError('');setAttempt(n=>n+1);}}>Tentar novamente</Button></Panel></div>;
- if(!data)return <div className="startup"><span className="brand-symbol">Q</span><p>Carregando QUEST INTELLIGENCE...</p></div>;
- return <DataContext.Provider value={data}><BrowserRouter><Layout><Routes>{demoRoutes.map(r=><Route key={r.path} path={r.path} element={r.element}/>)}<Route path="/indicadores-estrategicos" element={<StrategicIndicators/>}/><Route path="/rentabilidade-consolidada" element={<ConsolidatedProfitability/>}/><Route path="/alertas-gerenciais" element={<ManagementAlerts/>}/><Route path="/pecas-atividades" element={<PiecesActivities/>}/><Route path="/" element={<Dashboard/>}/><Route path="/clientes" element={<Clients/>}/><Route path="/clientes/:id" element={<ClientDetail/>}/><Route path="/marcas" element={<Brands/>}/><Route path="/marcas/:id" element={<BrandDetail/>}/><Route path="/contratos" element={<Contracts/>}/><Route path="/contratos/:id" element={<ContractDetail/>}/><Route path="/categorias-servicos" element={<Categories/>}/><Route path="/fees-jobs-extras" element={<Fees/>}/><Route path="/integracoes" element={<Integrations/>}/><Route path="/projetos" element={<Projects/>}/><Route path="/projetos/:id" element={<ProjectDetail/>}/><Route path="/timesheet" element={<Timesheet/>}/><Route path="/colaboradores" element={<People/>}/><Route path="/departamentos" element={<Departments/>}/><Route path="/produtividade" element={<Productivity/>}/><Route path="/rentabilidade" element={<Profitability/>}/><Route path="/rentabilidade-comercial" element={<Profitability commercial/>}/><Route path="/relatorios" element={<Reports/>}/><Route path="/configuracoes" element={<Settings/>}/><Route path="/controle-acesso" element={<AccessControl/>}/><Route path="*" element={<NotFound/>}/></Routes><Link to="/" className="sr-only">Início</Link></Layout></BrowserRouter></DataContext.Provider>;
+import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, StrictMode, Suspense, type ReactNode } from "react";
+import { createRoot } from "react-dom/client";
+import { createBrowserRouter, Link, Navigate, RouterProvider, useLocation } from "react-router-dom";
+import { MODULES } from "../../shared/catalog";
+import {CASH_VIEW,DRE_VIEW} from '../../shared/management';
+import { Layout } from "./components/Layout";
+import { EmptyState, ErrorState, Skeleton } from "./components/ui";
+import "@fontsource/inter/latin-400.css";
+import "@fontsource/inter/latin-500.css";
+import "@fontsource/inter/latin-600.css";
+import "@fontsource/inter/latin-700.css";
+import "./styles.css";
+import "./compact.css";
+import { SECTION_PAGES, UNAVAILABLE_PAGES } from "./nav";
+import { ApiError, useMe } from "./lib";
+import { AccountPage, ForcedPasswordPage, LoginPage } from "./pages/AuthPages";
+import { sanitizeTrackingUrl } from './tracking-url';
+
+// O Router deve observar apenas a URL já sanitizada, inclusive no login.
+sanitizeTrackingUrl();
+
+// Páginas carregadas sob demanda (bundle inicial menor; gráficos só quando necessários).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- props variam por página
+const named = <K extends string>(load: () => Promise<Record<K, React.ComponentType<any>>>, name: K) => lazy(() => load().then((m) => ({ default: m[name] })));
+const ModulePage = named(() => import("./pages/ModulePage"), "ModulePage");
+const ReportsPage = named(() => import("./pages/ReportsPage"), "ReportsPage");
+const AlertsPage=named(()=>import('./pages/AlertsPage'),'AlertsPage');
+const SettingsPage = named(() => import("./pages/SettingsPage"), "SettingsPage");
+const UnavailablePage = named(() => import("./pages/ModulePage"), "UnavailablePage");
+const ReportPrintPage = named(() => import("./pages/PrintPages"), "ReportPrintPage");
+
+const client: QueryClient = new QueryClient({
+  // Sessão expirada/revogada em qualquer chamada → volta para o login.
+  queryCache: new QueryCache({
+    onError: (e, query) => {
+      if (e instanceof ApiError && e.status === 401 && query.queryKey[0] !== "me") client.resetQueries({ queryKey: ["me"] });
+      if (e instanceof ApiError && e.code === "PASSWORD_CHANGE_REQUIRED") client.invalidateQueries({ queryKey: ["me"] });
+    },
+  }),
+  defaultOptions: {
+    queries: {
+      staleTime: 60000,
+      refetchInterval: false,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: false,
+      retry: false,
+    },
+  },
+});
+
+const page = (el: ReactNode) => <Suspense fallback={<Skeleton className="mx-auto h-64 max-w-[1480px]" />}>{el}</Suspense>;
+
+/** Endereço antigo: leva à página atual mantendo os filtros. */
+function Redirect({ to }: { to: string }) {
+  return <Navigate to={{ pathname: to, search: useLocation().search }} replace />;
 }
-// Os dados só são pedidos depois do login; a API também recusa sem sessão.
-function Root(){
- const [state,setState]=useState<'loading'|'login'|'app'>('loading');
- useEffect(()=>{fetch('/api/auth/me').then(r=>r.json()).then(b=>setState(b.user?'app':'login')).catch(()=>setState('login'));},[]);
- if(state==='loading')return <div className="startup"><span className="brand-symbol">Q</span></div>;
- return state==='login'?<Login onSuccess={()=>setState('app')}/>:<App/>;
+
+const router = createBrowserRouter([
+  { path: "/relatorios/:id/imprimir", element: page(<ReportPrintPage />) },
+  {
+    element: <Layout />,
+    children: [
+      ...MODULES.map((m) => ({ path: m.path, element: page(<ModulePage key={m.id} moduleId={m.id} />) })),
+      {path:'/dre',element:page(<ModulePage moduleId="financeiro" preset={DRE_VIEW}/>)},
+      {path:'/fluxo-caixa',element:page(<ModulePage moduleId="financeiro" preset={CASH_VIEW}/>)},
+      {path:'/alertas',element:page(<AlertsPage/>)},
+      {path:'/departamentos/:id',element:page(<ModulePage moduleId="departamentos"/>)},
+      {path:'/colaboradores/:id',element:page(<ModulePage moduleId="colaboradores"/>)},
+      ...SECTION_PAGES.map((s) => ({ path: s.path, element: page(<ModulePage moduleId={s.moduleId} preset={s.preset} compare={s.compare} />) })),
+      ...UNAVAILABLE_PAGES.map((u) => ({ path: u.path, element: page(<UnavailablePage key={u.path} {...u} />) })),
+      // Endereços do protótipo e da interface anterior continuam funcionando.
+      { path: "/dre-gerencial", element: <Redirect to="/dre" /> },
+      { path: "/dashboard-financeiro", element: <Redirect to="/financeiro" /> },
+      { path: "/alertas-gerenciais", element: <Redirect to="/alertas" /> },
+      { path: "/central-alertas", element: page(<AlertsPage />) },
+      { path: "/controle-acesso", element: page(<SettingsPage key="ip" section="ip" />) },
+      { path: "/permissoes", element: page(<SettingsPage key="perfis" section="perfis" />) },
+      { path: "/auditoria", element: page(<SettingsPage key="historico" section="historico" />) },
+      { path: "/relatorios", element: page(<ReportsPage />) },
+      { path: "/configuracoes", element: page(<SettingsPage />) },
+      { path: "/conta", element: page(<AccountPage />) },
+      {
+        path: "*",
+        element: (
+          <div className="rounded-lg border border-q-line bg-white">
+            <EmptyState title="Página não encontrada" reason="Use o menu lateral para navegar pelos módulos." />
+            <div className="pb-6 text-center">
+              <Link to="/" className="text-sm font-medium text-q-orange">Ir para a visão geral</Link>
+            </div>
+          </div>
+        ),
+      },
+    ],
+  },
+], { basename: import.meta.env.BASE_URL.replace(/\/$/, "") || "/" });
+
+/** Sem sessão → login. Senha temporária → troca obrigatória. Depois, o sistema. */
+function Gate() {
+  const me = useMe();
+  if (me.isPending) return <div className="grid min-h-screen place-items-center bg-q-ink text-sm text-white/60">Carregando…</div>;
+  if (me.error instanceof ApiError && me.error.status === 401) return <LoginPage />;
+  if (me.isError) return <div className="grid min-h-screen place-items-center p-6"><ErrorState error={me.error} onRetry={() => me.refetch()} /></div>;
+  if (me.data.mustChangePassword) return <ForcedPasswordPage />;
+  return <RouterProvider router={router} />;
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode><Root/></React.StrictMode>);
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <QueryClientProvider client={client}>
+      <Gate />
+    </QueryClientProvider>
+  </StrictMode>
+);

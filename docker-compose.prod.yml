@@ -34,7 +34,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: web/Dockerfile
+      dockerfile: frontend/Dockerfile
       args:
         VITE_BASE_PATH: ${PUBLIC_BASE_PATH:-/core/}
     depends_on: [api]

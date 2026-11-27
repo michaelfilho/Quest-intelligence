@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
 
   web:
-    build: { context: ., dockerfile: web/Dockerfile }
+    build: { context: ., dockerfile: frontend/Dockerfile }
     depends_on: [api]
     environment:
       API_UPSTREAM: api:3333

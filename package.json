@@ -2,26 +2,15 @@
   "name": "quest-rinne",
   "private": true,
   "scripts": {
-    "setup": "npm --prefix backend ci && npm --prefix frontend ci && npm --prefix e2e ci",
-    "dev:api": "npm --prefix backend run dev",
+    "setup": "npm --prefix server ci && npm --prefix frontend ci && npm --prefix e2e ci",
+    "dev:api": "npm --prefix server run dev",
     "dev:web": "npm --prefix frontend run dev",
-    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
-    "test": "npm --prefix backend test",
-    "build": "npm --prefix backend run typecheck && npm --prefix frontend run build",
-    "docs:indicators": "npm --prefix server run docs:indicators",
-    "homologacao": "npm run test:prototype",
-    "legacy:setup": "npm --prefix server ci && npm --prefix web ci && npm --prefix e2e ci",
-    "legacy:dev:api": "npm --prefix server run dev",
-    "legacy:dev:web": "npm --prefix web run dev",
-    "legacy:typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck",
-    "legacy:test": "npm --prefix server test && npm --prefix web test",
-    "legacy:build": "npm --prefix server run typecheck && npm --prefix web run build",
-    "dev": "node scripts/demo-dev.mjs",
-    "start": "npm --prefix backend start",
-    "user": "npm --prefix backend run user --",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix frontend run typecheck",
     "lint": "npm --prefix frontend run lint",
-    "test:prototype": "node e2e/prototype.mjs",
-    "legacy:homologacao": "npm run legacy:build && node scripts/homologar.mjs"
+    "test": "npm --prefix server test && npm --prefix frontend test",
+    "build": "npm --prefix server run typecheck && npm --prefix frontend run build",
+    "docs:indicators": "npm --prefix server run docs:indicators",
+    "homologacao": "npm run build && node scripts/homologar.mjs"
   },
   "type": "module"
 }

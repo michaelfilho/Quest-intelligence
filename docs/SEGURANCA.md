@@ -109,7 +109,7 @@ Nunca são registrados senhas, tokens, cookies, hashes nem credenciais de banco:
 | `server/test/api.test.ts` | ✅ 9/9 | catálogo, endpoints, filtros, paginação, estados sem banco, `DATABASE_URL` alheia recusada, PostgreSQL inacessível sem derrubar a API |
 | `server/test/reports.test.ts` | ✅ 5/5 | permissões por relatório; CSV/XLSX/Markdown; relatório sem banco marcado "DADOS INDISPONÍVEIS"; escopo e colunas; ordenação validada; XLSX sem fórmulas |
 | `server/test/migrations.test.ts` | ✅ 2/2 | migration 003 sobre banco já migrado, com dados |
-| `web/src/*.test.ts` | ✅ 12/12 | menu por perfil, colunas sensíveis, bloqueio de câmera/microfone/localização no nginx, formatação |
+| `frontend/src/*.test.ts` | ✅ 12/12 | menu por perfil, colunas sensíveis, bloqueio de câmera/microfone/localização no nginx, formatação |
 | Homologação visual (Playwright + Edge, build de produção local) | ver [HOMOLOGACAO_LOCAL.md](HOMOLOGACAO_LOCAL.md) | login, troca de senha, logout, todas as telas, perfil restrito, relatórios, responsividade |
 | `npm audit` | ✅ 0 vulnerabilidades conhecidas | não garante ausência de falhas |
 
