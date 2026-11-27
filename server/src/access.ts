@@ -5,6 +5,7 @@
 // - Gestão exige sessão com a permissão ip.manage; toda alteração vai para a auditoria.
 // - REQUIRE_PROXY=true: recusa conexões que não venham de um proxy em TRUST_PROXY (ninguém contorna o nginx).
 // - O nginx consulta GET /api/access/check (auth_request) a cada requisição do site.
+// - IP fora da lista recebe 404 (como se não houvesse site) e entra em ip_requests para autorizar ou excluir.
 // - Arquivo corrompido = falha FECHADA (bloqueia tudo exceto bootstrap e loopback local).
 import "./env.js";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -12,8 +13,8 @@ import { BlockList, isIP } from "node:net";
 import { dirname, join } from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
-import { requireAuth, requirePerm } from "./auth.js";
-import { audit, DATA_DIR } from "./store.js";
+import { clearIpLock, listIpLocks, requireAuth, requirePerm } from "./auth.js";
+import { audit, DATA_DIR, store } from "./store.js";
 
 const FILE = process.env.IP_ALLOWLIST_FILE || join(DATA_DIR, "ip-allowlist.json");
 const log = (level: string, msg: string, extra: object = {}) => console[level === "info" ? "log" : "warn"](JSON.stringify({ level, scope: "access", msg, ...extra }));
@@ -120,6 +121,17 @@ function auditBlocked(ip: string, path: string, reason: string) {
   audit({ event: "access.blocked", outcome: "denied", ip, target: path, details: { reason } });
 }
 
+const MAX_PENDING = 2000;
+/** Registra o IP recusado (no máximo 1 escrita por minuto por IP; excluídos continuam excluídos). */
+function recordRequest(ip: string, userAgent: string) {
+  if (!isIP(ip)) return;
+  const now = new Date().toISOString();
+  const { changes } = store()
+    .prepare("INSERT INTO ip_requests (ip, first_seen, last_seen, user_agent) VALUES (?, ?, ?, ?) ON CONFLICT(ip) DO UPDATE SET last_seen = excluded.last_seen, user_agent = excluded.user_agent WHERE last_seen < ?")
+    .run(ip, now, now, userAgent.slice(0, 200), new Date(Date.now() - 60000).toISOString());
+  if (changes) store().prepare("DELETE FROM ip_requests WHERE ip IN (SELECT ip FROM ip_requests WHERE status = 'pending' ORDER BY last_seen DESC LIMIT -1 OFFSET ?)").run(MAX_PENDING);
+}
+
 export function accessGuard(req: Request, res: Response, next: NextFunction) {
   if (directLoopback(req)) return next();
   // REQUIRE_PROXY=true (produção): só aceita conexões vindas do proxy confiável — ninguém contorna o nginx.
@@ -129,7 +141,9 @@ export function accessGuard(req: Request, res: Response, next: NextFunction) {
   }
   if (!state.enabled || check(list, clientIp(req))) return next();
   auditBlocked(clientIp(req), req.path, "IP fora da allowlist");
-  res.status(403).json({ error: "Acesso bloqueado: este IP não está autorizado. Solicite a liberação ao administrador.", ip: clientIp(req) });
+  recordRequest(clientIp(req), String(req.headers["user-agent"] ?? ""));
+  // O auth_request do nginx só entende 2xx/401/403: a consulta usa 403 e o nginx devolve 404 ao navegador.
+  res.status(req.path === "/access/check" ? 403 : 404).json({ error: "Not Found" });
 }
 
 // ---------------- Gestão (sessão com permissão ip.manage) ----------------
@@ -140,6 +154,8 @@ const view = (req: Request) => ({
   updatedAt: state.updatedAt,
   updatedBy: state.updatedBy ?? null,
   ip: clientIp(req),
+  requests: store().prepare("SELECT ip, status, first_seen, last_seen, user_agent FROM ip_requests ORDER BY last_seen DESC LIMIT 200").all(),
+  locks: listIpLocks(),
 });
 
 export function accessRouter() {
@@ -162,6 +178,27 @@ export function accessRouter() {
     const wasEnabled = state.enabled;
     save({ enabled: p.data.enabled, entries, updatedAt: now, updatedBy: req.user!.username });
     audit({ event: "ip_allowlist.update", actorId: req.user!.id, actor: req.user!.username, ip, details: { enabled: p.data.enabled, wasEnabled, added: [...after].filter((x) => !before.has(x)), removed: [...before].filter((x) => !after.has(x)) } });
+    res.json(view(req));
+  });
+  // allow = autorizar · dismiss = excluir a notificação (segue em 404) · unlock = zerar o bloqueio de login
+  const requestSchema = z.object({ ip: z.string().trim().max(64).refine((s) => isIP(normalizeIp(s)) !== 0, "IP inválido"), action: z.enum(["allow", "dismiss", "unlock"]) });
+  r.post("/requests", requireAuth, requirePerm("ip.manage"), express.json({ limit: "4kb" }), (req, res) => {
+    const p = requestSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: "IP ou ação inválida." });
+    const ip = normalizeIp(p.data.ip);
+    const { action } = p.data;
+    if (action === "unlock") clearIpLock(ip);
+    else if (action === "dismiss") store().prepare("UPDATE ip_requests SET status = 'dismissed' WHERE ip = ?").run(ip);
+    else {
+      const cidr = parseCidr(ip)!.cidr;
+      if (!state.entries.some((e) => e.cidr === cidr)) {
+        if (state.entries.length >= 500) return res.status(409).json({ error: "A lista atingiu o limite de 500 entradas." });
+        const now = new Date().toISOString();
+        save({ ...state, entries: [...state.entries, { cidr, label: "Autorizado pelo painel", addedAt: now }], updatedAt: now, updatedBy: req.user!.username });
+      }
+      store().prepare("DELETE FROM ip_requests WHERE ip = ?").run(ip);
+    }
+    audit({ event: "ip_allowlist.update", actorId: req.user!.id, actor: req.user!.username, ip: clientIp(req), target: ip, details: { action } });
     res.json(view(req));
   });
   return r;

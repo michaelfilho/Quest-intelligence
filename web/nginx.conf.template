@@ -15,7 +15,8 @@ server {
 
     # 1) Allowlist de IPs: cada requisição do site é validada pela API (gerenciada em Configurações).
     auth_request /_access;
-    error_page 403 /blocked.html;
+    # IP não autorizado vê 404, como se não houvesse site.
+    error_page 403 =404 /blocked.html;
 
     # 2) Camada opcional de senha única do nginx (padrão "off": o login individual da aplicação substitui).
     auth_basic "${AUTH_BASIC}";

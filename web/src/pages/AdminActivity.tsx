@@ -172,8 +172,8 @@ export function SecuritySection() {
     <SettingsForm title="Segurança" icon={<Shield size={13} className="text-q-orange" />} subtitle="Sessões, senhas e bloqueio por tentativas." fields={[
       { key: "security.session_idle_minutes", label: "Encerrar sessão após inatividade (min)", type: "number", min: 5, max: 480 },
       { key: "security.session_max_hours", label: "Duração máxima da sessão (h)", type: "number", min: 1, max: 72, help: "Vale para novas sessões." },
-      { key: "security.login_max_attempts", label: "Tentativas de login antes do bloqueio", type: "number", min: 3, max: 20 },
-      { key: "security.lockout_minutes", label: "Tempo de bloqueio (min)", type: "number", min: 1, max: 1440 },
+      { key: "security.login_max_attempts", label: "Falhas por usuário antes do bloqueio (por IP: sempre 3)", type: "number", min: 3, max: 20 },
+      { key: "security.lockout_minutes", label: "Bloqueio inicial em minutos (por IP, triplica a cada repetição)", type: "number", min: 1, max: 1440 },
       { key: "security.password_min_length", label: "Tamanho mínimo de senha", type: "number", min: 10, max: 64 },
     ]}>
       {env && (

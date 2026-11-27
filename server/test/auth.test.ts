@@ -56,7 +56,7 @@ test("login: cookie seguro, sessão, logout", async () => {
 test("credenciais inválidas: mesma resposta para usuário inexistente, senha errada e desativado", async () => {
   await createUser("inativo", "analista", { active: false });
   for (const [u, p] of [["ninguem", PASSWORD], ["ana", "errada-123456"], ["inativo", PASSWORD]]) {
-    const r = await new Client(srv.base, "203.0.113.50").login(u, p);
+    const r = await new Client(srv.base, "203.0.113." + (50 + ["ninguem", "ana", "inativo"].indexOf(u))).login(u, p);
     assert.equal(r.status, 401);
     assert.equal(r.body.error, "Usuário ou senha inválidos.");
   }
@@ -64,10 +64,30 @@ test("credenciais inválidas: mesma resposta para usuário inexistente, senha er
 
 test("bloqueio por tentativas (por usuário)", async () => {
   await createUser("bruto", "analista");
-  const c = new Client(srv.base, "203.0.113.60");
-  for (let i = 0; i < 5; i++) assert.equal((await c.login("bruto", "errada-" + i)).status, 401);
-  assert.equal((await c.login("bruto")).status, 429); // nem a senha certa entra durante o bloqueio
-  assert.equal((await new Client(srv.base, "203.0.113.61").login("bruto")).status, 429); // vale de qualquer IP
+  // IPs diferentes, para exercitar só o limite por usuário
+  for (let i = 0; i < 5; i++) assert.equal((await new Client(srv.base, "203.0.113." + (60 + i)).login("bruto", "errada-" + i)).status, 401);
+  assert.equal((await new Client(srv.base, "203.0.113.70").login("bruto")).status, 429); // nem a senha certa, de qualquer IP
+});
+
+test("bloqueio progressivo por IP: 3 erros = 15 min, depois 45 e 135; acertar zera", async () => {
+  await createUser("progressivo", "analista");
+  const ip = "203.0.113.80";
+  const c = new Client(srv.base, ip);
+  const expire = () => store().prepare("UPDATE login_locks SET locked_until = 1 WHERE ip = ?").run(ip);
+  // usuários inexistentes diferentes: não esbarra no limite por usuário
+  let n = 0;
+  const wrong = () => c.login("fantasma" + n++, "errada-123456");
+  for (const minutes of [15, 45, 135]) {
+    assert.equal((await wrong()).status, 401);
+    assert.equal((await wrong()).status, 401);
+    const third = await wrong();
+    assert.equal(third.status, 429);
+    assert.ok(Math.abs(Number(third.headers.get("retry-after")) - minutes * 60) <= 2);
+    assert.equal((await c.login("progressivo")).status, 429); // nem a senha certa durante o bloqueio
+    expire();
+  }
+  assert.equal((await c.login("progressivo")).status, 204);
+  assert.equal(store().prepare("SELECT count(*) n FROM login_locks WHERE ip = ?").get(ip)?.n, 0);
 });
 
 test("CSRF: POST sem header próprio ou de outra origem é recusado", async () => {

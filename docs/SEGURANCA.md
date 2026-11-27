@@ -24,10 +24,12 @@ navegador ─► proxy TLS da VPS ─► nginx (web) ─────────
 | Expiração | por inatividade (30 min, deslizante) e absoluta (12 h), ambas configuráveis |
 | Encerramento | logout apaga a sessão no servidor e volta à tela de login; troca de senha encerra as outras sessões; desativar usuário ou redefinir senha encerra todas |
 | Revogação | o usuário encerra as próprias sessões em *Minha conta*; o administrador (`sessoes.manage`) encerra qualquer sessão |
-| Tentativas | 5 falhas por usuário (de qualquer IP) ou 20 por IP → bloqueio de 15 min (configurável); nginx limita `/api/auth/login` a 10/min por IP |
+| Tentativas | **por IP:** 3 falhas bloqueiam por 15 min (configurável) e cada repetição triplica (45, 135...), persistido no SQLite; acertar zera. **Por usuário:** 5 falhas de qualquer IP (configurável). Painel ou `npm run user:admin` zeram o bloqueio; nginx limita `/api/auth/login` a 10/min por IP |
 | CSRF | `SameSite=Strict` + header obrigatório `X-Requested-With: rinne` em métodos de escrita + checagem de `Origin` (em desenvolvimento, aceita os servidores locais do Vite; em produção, só `Origin = Host` e `ALLOWED_ORIGINS`) |
 | Frontend | nenhum token no `localStorage`/`sessionStorage`; o token nunca é visível ao JavaScript (cookie `HttpOnly`) |
 | Recuperação | `npm run user:admin -- <usuario>` (exige acesso ao terminal do servidor) |
+
+Com o **controle de acesso por IP ativo** (Configurações; desligado por padrão), IP fora da lista recebe **404** no site e na API e aparece em *Aguardando autorização*, onde pode ser autorizado ou ter a notificação excluída. Em emergência, use `IP_ALLOWLIST_BOOTSTRAP`.
 
 ## 3. Controle de acesso por perfil
 

@@ -148,7 +148,9 @@ export function csrf(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// ---------------- Limite de tentativas (por usuário e por IP) ----------------
+// ---------------- Limite de tentativas ----------------
+// Por IP: 3 falhas bloqueiam por security.lockout_minutes; cada novo bloqueio triplica (15, 45, 135...). Persistido.
+// Por usuário (qualquer IP): contador em memória, contra ataque distribuído.
 // ponytail: em memória (zera ao reiniciar, 1 instância). Mover para o SQLite se houver múltiplas instâncias.
 const attempts = new Map<string, { n: number; first: number }>();
 function locked(key: string, max: number, windowMs: number) {
@@ -161,6 +163,25 @@ function fail(key: string) {
   const a = attempts.get(key);
   attempts.set(key, a ? { n: a.n + 1, first: a.first } : { n: 1, first: Date.now() });
 }
+
+export const IP_ATTEMPTS = 3;
+const ipLock = (ip: string) => store().prepare("SELECT fails, locks, locked_until FROM login_locks WHERE ip = ?").get(ip);
+const lockedMs = (ip: string) => Math.max(0, Number(ipLock(ip)?.locked_until ?? 0) - Date.now());
+/** Conta a tentativa ANTES de verificar a senha (SQLite síncrono): requisições paralelas não furam o limite. */
+function countIpAttempt(ip: string) {
+  const row = ipLock(ip);
+  let fails = Number(row?.fails ?? 0) + 1;
+  let locks = Number(row?.locks ?? 0);
+  let until = 0;
+  if (fails >= IP_ATTEMPTS) {
+    until = Date.now() + getSetting("security.lockout_minutes") * 60000 * 3 ** locks;
+    locks += 1;
+    fails = 0;
+  }
+  store().prepare("INSERT INTO login_locks (ip, fails, locks, locked_until) VALUES (?, ?, ?, ?) ON CONFLICT(ip) DO UPDATE SET fails = excluded.fails, locks = excluded.locks, locked_until = excluded.locked_until").run(ip, fails, locks, until);
+}
+export const clearIpLock = (ip: string) => store().prepare("DELETE FROM login_locks WHERE ip = ?").run(ip).changes;
+export const listIpLocks = () => store().prepare("SELECT ip, fails, locks, locked_until FROM login_locks ORDER BY locked_until DESC LIMIT 200").all();
 
 // ---------------- Rotas /api/auth ----------------
 const loginSchema = z.object({ username: z.string().trim().min(1).max(64), password: z.string().min(1).max(256) });
@@ -182,19 +203,24 @@ export function authRouter() {
     const max = getSetting("security.login_max_attempts");
     const windowMs = getSetting("security.lockout_minutes") * 60000;
     const userKey = "u:" + username.toLowerCase();
-    if (locked(userKey, max, windowMs) || locked("ip:" + ip, max * 4, windowMs)) {
+    const blocked = (ms: number) => {
       audit({ event: "auth.login", outcome: "denied", actor: username, ip, details: { reason: "bloqueio por tentativas" } });
-      return res.status(429).json({ error: `Muitas tentativas. Aguarde ${getSetting("security.lockout_minutes")} minutos.` });
-    }
+      res.set("Retry-After", String(Math.ceil(ms / 1000)));
+      return res.status(429).json({ error: `Muitas tentativas. Aguarde ${Math.ceil(ms / 60000)} minutos.` });
+    };
+    if (lockedMs(ip)) return blocked(lockedMs(ip));
+    if (locked(userKey, max, windowMs)) return blocked(windowMs);
+    countIpAttempt(ip);
     const u = store().prepare("SELECT id, username, password_hash, active FROM users WHERE username = ?").get(username);
     const ok = u ? await verifyPassword(password, String(u.password_hash)) : (await verifyPassword(password, await dummyHash()), false);
     if (!u || !ok || !u.active) {
       fail(userKey);
-      fail("ip:" + ip);
       audit({ event: "auth.login", outcome: "failure", actorId: u ? Number(u.id) : null, actor: username, ip, details: { reason: !u ? "usuário inexistente" : !ok ? "senha incorreta" : "usuário desativado" } });
+      if (lockedMs(ip)) return blocked(lockedMs(ip));
       return res.status(401).json({ error: "Usuário ou senha inválidos." }); // mesma mensagem para todos os casos
     }
     attempts.delete(userKey);
+    clearIpLock(ip);
     createSession(Number(u.id), req, res);
     store().prepare("UPDATE users SET last_login_at = ? WHERE id = ?").run(now(), u.id);
     audit({ event: "auth.login", actorId: Number(u.id), actor: String(u.username), ip });

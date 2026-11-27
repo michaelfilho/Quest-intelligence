@@ -16,6 +16,8 @@ interface AccessState {
   updatedAt: string | null;
   updatedBy: string | null;
   ip: string;
+  requests: { ip: string; status: "pending" | "dismissed"; first_seen: string; last_seen: string; user_agent: string }[];
+  locks: { ip: string; fails: number; locks: number; locked_until: number }[];
 }
 
 // Validação leve no navegador; a validação oficial (CIDR, /0 proibido) é do backend.
@@ -24,7 +26,7 @@ const looksLikeIp = (s: string) => /^[0-9a-fA-F:.]+(\/\d{1,3})?$/.test(s.trim())
 /** Allowlist de IPs: só os IPs/redes liberados acessam o site e a API quando o controle está ativo. */
 export function AccessPanel() {
   const me = useQuery({ queryKey: ["access-me"], queryFn: () => api<{ enabled: boolean; ip: string }>("/access/me") });
-  const list = useQuery({ queryKey: ["access-list"], queryFn: () => api<AccessState>("/access") }); // exige ip.manage (sessão)
+  const list = useQuery({ queryKey: ["access-list"], queryFn: () => api<AccessState>("/access"), refetchInterval: 15_000 }); // exige ip.manage (sessão)
   const [saved, setSaved] = useState<AccessState | null>(null);
   useEffect(() => {
     if (list.data && !saved) (setSaved(list.data), setDraft({ enabled: list.data.enabled, entries: list.data.entries }));
@@ -53,6 +55,16 @@ export function AccessPanel() {
       setBusy(false);
     }
   }
+
+  const act = (ip: string, action: "allow" | "dismiss" | "unlock", ok: string) =>
+    run(async () => {
+      const s = (await send<AccessState>("POST", "/access/requests", { ip, action }))!;
+      await list.refetch();
+      return s;
+    }, ok);
+  const pending = list.data?.requests.filter((r) => r.status === "pending") ?? [];
+  const dismissed = list.data?.requests.filter((r) => r.status === "dismissed") ?? [];
+  const action = "text-xs font-semibold text-q-orange hover:underline disabled:opacity-50";
 
   function add(e: FormEvent) {
     e.preventDefault();
@@ -96,7 +108,7 @@ export function AccessPanel() {
                 <input type="checkbox" className="h-5 w-5 accent-q-orange" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />
                 <span>
                   <span className="block text-sm font-bold">Ativar bloqueio por IP</span>
-                  <span className="text-xs text-q-mid">Ativo: qualquer IP fora da lista recebe "Acesso bloqueado". Desativado: o acesso depende apenas da senha do site.</span>
+                  <span className="text-xs text-q-mid">Ativo: qualquer IP fora da lista recebe erro 404 e aparece em "Aguardando autorização". Desativado: o acesso depende apenas da senha do site.</span>
                 </span>
               </label>
 
@@ -162,6 +174,37 @@ export function AccessPanel() {
               </div>
             </>
           )
+        )}
+
+        {saved && (
+          <div className="space-y-4">
+            {([["Aguardando autorização", pending, "Nenhum IP novo tentou acessar."], ["Excluídos (continuam vendo 404)", dismissed, "Nenhum IP excluído."]] as const).map(([title, rows, empty]) => (
+              <section key={title} className="rounded-xl border border-q-line p-4">
+                <h3 className="text-sm font-bold">{title}</h3>
+                {!rows.length && <p className="mt-1 text-xs text-q-mid">{empty}</p>}
+                {rows.map((r) => (
+                  <div key={r.ip} className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+                    <strong className="font-mono">{r.ip}</strong>
+                    <span className="text-xs text-q-mid">{fmt(r.last_seen, "datetime")}</span>
+                    <span className="max-w-xs truncate text-xs text-q-mid" title={r.user_agent}>{r.user_agent}</span>
+                    <button className={action} disabled={busy || dirty} onClick={() => act(r.ip, "allow", `${r.ip} autorizado.`)}>Autorizar</button>
+                    {r.status === "pending" && <button className={action} disabled={busy || dirty} onClick={() => act(r.ip, "dismiss", `Notificação de ${r.ip} excluída.`)}>Excluir notificação</button>}
+                  </div>
+                ))}
+              </section>
+            ))}
+            <section className="rounded-xl border border-q-line p-4">
+              <h3 className="text-sm font-bold">Tentativas de login</h3>
+              {!list.data?.locks.length && <p className="mt-1 text-xs text-q-mid">Nenhum IP com falhas de login.</p>}
+              {list.data?.locks.map((l) => (
+                <div key={l.ip} className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+                  <strong className="font-mono">{l.ip}</strong>
+                  <span className="text-xs text-q-mid">{l.locked_until > Date.now() ? `bloqueado até ${fmt(new Date(l.locked_until).toISOString(), "datetime")}` : `${l.fails} falha(s), ${l.locks} bloqueio(s) anteriores`}</span>
+                  <button className={action} disabled={busy || dirty} onClick={() => act(l.ip, "unlock", `Bloqueio de ${l.ip} removido.`)}>Zerar tentativas</button>
+                </div>
+              ))}
+            </section>
+          </div>
         )}
 
         {msg && (

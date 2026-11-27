@@ -24,6 +24,7 @@ if (existing) {
   audit({ event: "user.create", actor: "cli", target: username, details: { via: "cli", roleId: "admin" } });
   console.log(`Administrador "${username}" criado.`);
 }
+store().prepare("DELETE FROM login_locks").run(); // recuperação pelo terminal também zera os bloqueios por tentativas
 console.log(`Senha temporária (exibida só agora): ${temp}`);
 console.log("No primeiro acesso o sistema exigirá a troca da senha.");
 closeStore();

@@ -48,5 +48,5 @@ test("003 preserva usuários, perfis, sessões e auditoria e limpa permissões e
 
 test("a 002 já aplicada não foi alterada e as migrations são sequenciais", () => {
   const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
-  assert.deepEqual(files, ["001_auth.sql", "002_rinne_n8n_meetings.sql", "003_remove_ai_voice_meetings.sql"]);
+  assert.deepEqual(files, ["001_auth.sql", "002_rinne_n8n_meetings.sql", "003_remove_ai_voice_meetings.sql", "004_lockout_ip_requests.sql"]);
 });

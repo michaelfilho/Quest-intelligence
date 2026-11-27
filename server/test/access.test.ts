@@ -70,8 +70,8 @@ test("ativo: só IPs liberados (lista + bootstrap) acessam; alteração auditada
   assert.equal((await anon("/api/access/check", ME)).status, 204); // consulta do nginx
   assert.equal((await anon("/api/access/check", "192.0.2.10")).status, 204); // bootstrap
   const blocked = await anon("/api/auth/login", OTHER);
-  assert.equal(blocked.status, 403); // bloqueado ANTES do login
-  assert.equal(blocked.body.ip, OTHER);
+  assert.equal(blocked.status, 404); // recusado ANTES do login, sem revelar o site
+  assert.deepEqual(blocked.body, { error: "Not Found" });
   assert.equal((await anon("/api/access/check", OTHER)).status, 403);
 
   const ev = store().prepare("SELECT event, details FROM audit_log WHERE event IN ('ip_allowlist.update', 'access.blocked')").all();
@@ -79,11 +79,28 @@ test("ativo: só IPs liberados (lista + bootstrap) acessam; alteração auditada
   assert.ok(ev.some((e) => e.event === "access.blocked"));
 });
 
+test("IP recusado fica pendente; autorizar libera, excluir mantém 404 sem nova notificação", async () => {
+  const request = async (ip: string) => (await adm.req("/api/access")).body.requests.find((r: any) => r.ip === ip);
+  const act = (ip: string, action: string) => adm.req("/api/access/requests", { method: "POST", body: { ip, action } });
+  assert.equal((await request(OTHER)).status, "pending");
+  assert.equal((await act(OTHER, "dismiss")).status, 200);
+  assert.equal((await anon("/api/health", OTHER)).status, 404);
+  assert.equal((await request(OTHER)).status, "dismissed");
+  assert.equal((await act(OTHER, "allow")).status, 200);
+  assert.equal((await anon("/api/health", OTHER)).status, 200);
+  assert.equal(await request(OTHER), undefined);
+  assert.equal((await act("abc", "allow")).status, 400);
+  const dir = new Client(srv.base, ME);
+  await dir.login("diretor");
+  assert.equal((await dir.req("/api/access/requests", { method: "POST", body: { ip: OTHER, action: "allow" } })).status, 403);
+  await put({ enabled: true, entries: [{ cidr: "203.0.113.0/24", label: "Escritório" }] }); // restaura para os próximos testes
+});
+
 test("falsificação de cabeçalhos não burla o bloqueio", async () => {
   // X-Forwarded-For forjado à esquerda: vale o último salto não confiável.
-  assert.equal((await anon("/api/health", `${ME}, ${OTHER}`)).status, 403);
+  assert.equal((await anon("/api/health", `${ME}, ${OTHER}`)).status, 404);
   // X-Real-IP e CF-Connecting-IP são ignorados (só X-Forwarded-For de proxy confiável conta).
-  assert.equal((await anon("/api/health", OTHER, { "x-real-ip": ME, "cf-connecting-ip": ME })).status, 403);
+  assert.equal((await anon("/api/health", OTHER, { "x-real-ip": ME, "cf-connecting-ip": ME })).status, 404);
   // Healthcheck local direto (sem proxy) continua funcionando.
   const direct = await fetch(srv.base + "/api/health");
   assert.equal(direct.status, 200);
@@ -113,7 +130,7 @@ test("REQUIRE_PROXY: conexão fora dos proxies confiáveis é recusada", async (
 test("arquivo corrompido falha fechado", async () => {
   writeFileSync(FILE, "{corrompido");
   loadAccess();
-  assert.equal((await anon("/api/health", ME)).status, 403);
+  assert.equal((await anon("/api/health", ME)).status, 404);
   assert.equal((await anon("/api/health", "192.0.2.10")).status, 200); // bootstrap ainda entra
   writeFileSync(FILE, JSON.stringify({ enabled: false, entries: [] }));
   loadAccess();
