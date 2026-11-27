@@ -123,6 +123,7 @@ export function createApp() {
     const p = parse(pageSchema, req.query);
     if (p.sort && !allowedColumns(req.user!, def).some((c) => c.key === p.sort)) throw new HttpError(400, "Coluna de ordenação inválida");
     if(p.dreGroup&&def.id!=='dre_categorias')throw new HttpError(400,'Grupo disponível somente nas categorias da DRE.');
+    if(p.clientActivity&&def.id!=='gestao_clientes')throw new HttpError(400,'Filtro de atividade disponível somente na listagem gerencial de clientes.');
     const t = await resolveTable(def.id, f, p, (await dbState()).state);
     // Colunas sem permissão são removidas no servidor (ex.: valores financeiros para perfis operacionais).
     const rows=stripRows(req.user!,def,t.rows),columns=allowedColumns(req.user!,def);

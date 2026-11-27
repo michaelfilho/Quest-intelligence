@@ -27,9 +27,23 @@ try{
     await page.setViewportSize({width:1440,height:1000});await goto('/clientes');const clients=await panel('Clientes');
     const header=clients.locator('th:has(button:text-is("Cliente"))');await header.locator('button').click();
     if(await header.getAttribute('aria-sort')!=='ascending')throw new Error('ordem crescente não indicada');
-    await clients.locator('tbody tr').first().getByText('Cliente % literal',{exact:true}).waitFor();await header.locator('button').click();
+    await clients.locator('tbody tr').first().getByText('Cliente Aurora',{exact:true}).waitFor();await header.locator('button').click();
     if(await header.getAttribute('aria-sort')!=='descending')throw new Error('ordem decrescente não indicada');
     await clients.locator('tbody tr').first().getByText('Cliente Horizonte',{exact:true}).waitFor();
+  });
+  await check('clientes: ativos por padrão, inativos separados e exportação da aba',async()=>{
+    await goto('/clientes');const views=page.getByRole('navigation',{name:'Visualizações'});
+    await views.getByRole('button',{name:'Clientes ativos',exact:true}).waitFor();
+    let clients=await panel('Clientes');await clients.getByText('Cliente Aurora',{exact:true}).waitFor();
+    if(await clients.getByText('Cliente % literal',{exact:true}).count())throw new Error('cadastro sem movimento apareceu entre ativos');
+    await views.getByRole('button',{name:'Clientes inativos',exact:true}).click();
+    clients=await panel('Clientes');await clients.getByText('Cliente % literal',{exact:true}).waitFor();
+    if(await clients.getByText('Cliente Aurora',{exact:true}).count())throw new Error('cliente ativo apareceu na aba inativa');
+    await clients.getByRole('textbox',{name:'Pesquisar em Clientes'}).fill('literal');
+    const [download]=await Promise.all([page.waitForEvent('download'),clients.getByRole('button',{name:'Exportar página'}).click()]);
+    if(!download.suggestedFilename().includes('gestao_clientes'))throw new Error('exportação incorreta');
+    await shot('clientes-inativos');await page.reload();clients=await panel('Clientes');await clients.getByText('Cliente % literal',{exact:true}).waitFor();
+    await views.getByRole('button',{name:'Clientes ativos',exact:true}).click();clients=await panel('Clientes');await clients.getByText('Cliente Aurora',{exact:true}).waitFor();await shot('clientes-ativos');
   });
   await check('status: filtro de projeto não produz zero em notas fiscais',async()=>{
     await goto('/projetos');await page.getByRole('button',{name:/Mais filtros/}).click();

@@ -11,6 +11,34 @@ import {authorizedContext} from '../src/performance.js';
 const db=new PGlite(),f={start:'2026-01-01',end:'2026-01-31',compare:false},p={page:1,pageSize:25};
 const read:Query=async<T extends Record<string,any>>(sql:string,params:unknown[])=>(await db.query<T>(sql,params)).rows;
 before(()=>managementFixtures(db));after(()=>db.close());
+
+test('clientes ativos e inativos são separados no SQL antes da busca e paginação',async()=>{
+  const active=await entitySummary('client',f,{...p,clientActivity:'active',pageSize:1},read);
+  assert.equal(active.total,2);assert.equal(active.rows.length,1);
+  const inactive=await entitySummary('client',f,{...p,clientActivity:'inactive'},read);
+  assert.deepEqual(inactive.rows.map(r=>r.id),['30']);assert.equal(inactive.rows[0].horas,null);
+  const search={...p,search:'literal',searchColumns:SEARCH_COLUMNS.gestao_clientes};
+  assert.equal((await entitySummary('client',f,{...search,clientActivity:'active'},read)).total,0);
+  assert.equal((await entitySummary('client',f,{...search,clientActivity:'inactive'},read)).total,1);
+  const emptyPeriod={...f,start:'2025-01-01',end:'2025-01-31'};
+  assert.equal((await entitySummary('client',emptyPeriod,{...p,clientActivity:'active'},read)).total,0);
+  assert.equal((await entitySummary('client',emptyPeriod,{...p,clientActivity:'inactive'},read)).total,3);
+  assert.equal((await entitySummary('client',f,p,read)).total,3);
+});
+
+test('clientes com recebimento ou faturamento sem horas são ativos no escopo permitido',async()=>{
+  await db.exec(`INSERT INTO core.clients VALUES(40,'Somente recebimento',NULL),(50,'Somente faturamento','11144477735');
+    INSERT INTO core.jobs(iclips_id,client_id,name,entered_at) VALUES(40,40,'Job financeiro','2026-01-01');
+    INSERT INTO core.financial_entries VALUES(140,NULL,'Entrada',250,'2026-01-10',1,40,1);
+    INSERT INTO core.invoices(iclips_id,status,issued_at,service_amount,client_document) VALUES(150,'issued','2026-01-10',500,'11144477735');`);
+  try{
+    const rows=await entitySummary('client',f,{...p,clientActivity:'active'},read);
+    assert.ok(rows.rows.some(r=>r.id==='40'&&Number(r.recebido)===250&&r.horas===null));
+    assert.ok(rows.rows.some(r=>r.id==='50'&&Number(r.faturado)===500&&r.horas===null));
+    const restricted=await authorizedContext({id:991,permissions:new Set(['clientes.view']),scopeDepartment:null},()=>entitySummary('client',f,{...p,clientActivity:'active'},read));
+    assert.ok(restricted.rows.every(r=>r.id!=='40'&&r.id!=='50'));
+  }finally{await db.exec('DELETE FROM core.invoices WHERE iclips_id=150; DELETE FROM core.financial_entries WHERE iclips_id=140; DELETE FROM core.jobs WHERE iclips_id=40; DELETE FROM core.clients WHERE iclips_id IN(40,50)');}
+});
 test('clientes separam componentes, cadastros sem movimento e margem não comprovada',async()=>{
   const r=await entitySummary('client',f,p,read),row=r.rows.find(x=>x.id==='10')!;
   assert.equal(r.total,3);assert.equal(row.cliente,'Cliente Aurora');assert.equal(Number(row.faturado),90);

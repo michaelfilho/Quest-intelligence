@@ -3,6 +3,14 @@ import {INDICATORS,CHARTS,TABLES,ACCESS_MODULES} from '../../shared/catalog';
 import {CASH_VIEW,DRE_VIEW,MANAGEMENT_VIEWS} from '../../shared/management';
 import {columnPermission} from '../../shared/permissions';
 import {shortState,managementText} from './lib';
+it('listagem de clientes abre somente ativos e mantém inativos em aba separada',()=>{
+  expect(MANAGEMENT_VIEWS.clientes[0].label).toBe('Clientes ativos');
+  expect(MANAGEMENT_VIEWS.clientes[0].clientActivity).toBe('active');
+  const inactive=MANAGEMENT_VIEWS.clientes.find(v=>v.id==='inativos')!;
+  expect(inactive.label).toBe('Clientes inativos');expect(inactive.clientActivity).toBe('inactive');
+  expect(inactive.tables).toEqual(['gestao_clientes']);
+  expect(MANAGEMENT_VIEWS.cliente.every(v=>v.clientActivity===undefined)).toBe(true);
+});
 it('abas referenciam itens existentes e mantêm os 107 indicadores do catálogo',()=>{
   expect(Object.keys(INDICATORS)).toHaveLength(112);
   for(const view of [...Object.values(MANAGEMENT_VIEWS).flat(),DRE_VIEW,CASH_VIEW]){

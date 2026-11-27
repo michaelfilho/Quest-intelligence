@@ -43,7 +43,7 @@ function ModuleContent({moduleId,preset,compare}:{moduleId:string;preset?:Manage
   const q=useQuery({queryKey:['module-summary',m.id,filters],queryFn:({signal})=>api<ModuleResult>(`/modules/${m.id}`,{...filterParams(filters),view:'summary'},signal)});
   const indicators=view.indicators.filter(i=>allowed('indicators',i)),charts=view.charts.filter(c=>allowed('charts',c));
   const tables=view.tables.filter(t=>allowed('tables',t)&&t!=='alertas').map(t=>TABLES[t]);
-  const table=(t:typeof tables[number])=><Viewport key={t.id}>{active=><DataTable def={t} filters={filters} search={search} active={active}/>}</Viewport>;
+  const table=(t:typeof tables[number])=>{const clientActivity=m.id==='clientes'&&t.id==='gestao_clientes'?view.clientActivity:undefined;return <Viewport key={`${t.id}:${clientActivity??'all'}`}>{active=><DataTable def={t} filters={filters} search={search} active={active} extraParams={clientActivity?{clientActivity}:{}}/>}</Viewport>;};
   const overview=m.id==='executivo'&&!preset&&view.id==='visao';
   const setTab=(tab:string)=>{const next=new URLSearchParams(sp);next.set('aba',tab);setSp(next,{replace:true});};
   return <div className="mx-auto max-w-[1480px] space-y-6">

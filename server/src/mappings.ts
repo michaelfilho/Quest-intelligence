@@ -22,7 +22,7 @@ export type Computed = Pick<IndicatorResult, "value" | "recordsUsed" | "recordsE
   reliability: Reliability;
   insufficient?: string; // preenchido quando a fonte não permite calcular → DADOS INSUFICIENTES
 };
-export type Page = { page: number; pageSize: number; sort?: string; dir?: "asc" | "desc";search?:string;searchColumns?:string[];dreGroup?:string; activity?:{kind:'TASK'|'WORKFLOW';parent:string;child:string} };
+export type Page = { page: number; pageSize: number; sort?: string; dir?: "asc" | "desc";search?:string;searchColumns?:string[];dreGroup?:string;clientActivity?:'active'|'inactive'; activity?:{kind:'TASK'|'WORKFLOW';parent:string;child:string} };
 export type Rows = Pick<TableResult, "rows" | "total" | "reason"> & { reliability: Reliability };
 
 export interface IndicatorImpl {

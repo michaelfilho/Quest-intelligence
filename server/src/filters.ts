@@ -30,6 +30,7 @@ export const filtersSchema = z
   .refine((f) => Date.parse(f.end) - Date.parse(f.start) <= 6 * 366 * 86400000, { message: "período máximo de 6 anos", path: ["end"] });
 
 export const pageSchema = z.object({
+  clientActivity:z.enum(['active','inactive']).optional(),
   search:z.string().trim().max(100).optional(),
   dreGroup:z.enum(['receita_recebida','despesas_fixas','despesas_variaveis','receitas_nao_operacionais','despesas_nao_operacionais','impostos_pagos','participacao_lucros_paga']).optional(),
   page: z.coerce.number().int().min(1).max(10000).default(1),

@@ -37,6 +37,19 @@ before(async () => {
 });
 after(async () => { await closePool(); srv.stop(); await engine.close(); mock.restoreAll(); });
 const period = "start=2026-01-01&end=2026-01-31";
+test('abas de clientes e CSV separam atividade, validam parâmetro e preservam pesquisa',async()=>{
+  await engine.exec("INSERT INTO core.clients(iclips_id,name) VALUES(70,'Cadastro sem movimento')");
+  try{
+    const active=await admin.req(`/api/tables/gestao_clientes?${period}&clientActivity=active`);
+    assert.equal(active.body.status,'OK');assert.ok(active.body.rows.every((r:any)=>r.id!=='70'));
+    const inactive=await admin.req(`/api/tables/gestao_clientes?${period}&clientActivity=inactive&search=sem movimento`);
+    assert.equal(inactive.body.total,1);assert.equal(inactive.body.rows[0].id,'70');
+    const csv=await admin.req(`/api/tables/gestao_clientes/export?${period}&clientActivity=inactive`);
+    assert.equal(csv.status,200);assert.ok(csv.body.includes('Cadastro sem movimento'));assert.ok(!csv.body.includes('Cliente Aurora'));
+    assert.equal((await admin.req(`/api/tables/gestao_clientes?${period}&clientActivity=invalid`)).status,400);
+    assert.equal((await admin.req(`/api/tables/projetos?${period}&clientActivity=active`)).status,400);
+  }finally{await engine.exec('DELETE FROM core.clients WHERE iclips_id=70');}
+});
 test('listas gerenciais e CSV aplicam pesquisa, colunas e permissão de exportar no servidor',async()=>{
   const r=await admin.req(`/api/tables/gestao_clientes?${period}&search=Aurora`);
   assert.equal(r.body.status,'OK');assert.equal(r.body.total,1);assert.equal(r.body.rows[0].recebido,100);

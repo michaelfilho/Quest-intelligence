@@ -54,9 +54,12 @@ export async function entitySummary(kind:'client'|'project'|'group',f:Filters,p:
     }
     ctes.push(`keys AS (SELECT id FROM client_work ${paid?'UNION SELECT id FROM client_paid':''} ${billed?'UNION SELECT client_key FROM billed':''} ${registry})`);
     const names=registryJoin(s,'clients','iclips_id','k.id','cn','Cliente sem nome');
+    const movement=`(w.id IS NOT NULL${paid?' OR p.recebido IS NOT NULL OR p.despesas IS NOT NULL':''}${billed?' OR b.client_key IS NOT NULL':''})`;
+    const activityWhere=p.clientActivity==='active'?` AND ${movement}`:p.clientActivity==='inactive'?` AND NOT ${movement}`:'';
+    const activityNote=p.clientActivity?' Atividade considera movimentação visível no período e nas permissões atuais; não representa situação cadastral de ativação/desativação.':'';
     return {...await paginate(`WITH ${ctes.join(',')} SELECT k.id,${names.value} AS cliente,w.projetos,w.horas,w.custo_registrado,
       ${billed?'b.faturado':'NULL::numeric AS faturado'},${paid?'p.recebido,p.despesas':'NULL::numeric AS recebido,NULL::numeric AS despesas'},NULL::numeric AS resultado,NULL::numeric AS margem
-      FROM keys k LEFT JOIN client_work w ON w.id=k.id ${names.join} ${paid?'LEFT JOIN client_paid p ON p.id=k.id':''} ${billed?'LEFT JOIN billed b ON b.client_key=k.id':''} WHERE k.id IS NOT NULL`,params,p,`${p.sort??'cliente'} ${p.dir==='desc'?'DESC':'ASC'} NULLS LAST,id`,reader),reason:[note,...limitations].join(' ')};
+      FROM keys k LEFT JOIN client_work w ON w.id=k.id ${names.join} ${paid?'LEFT JOIN client_paid p ON p.id=k.id':''} ${billed?'LEFT JOIN billed b ON b.client_key=k.id':''} WHERE k.id IS NOT NULL${activityWhere}`,params,p,`${p.sort??'cliente'} ${p.dir==='desc'?'DESC':'ASC'} NULLS LAST,id`,reader),reason:[note,...limitations].join(' ')+activityNote};
   }
   if(kind==='project'&&!f.department&&!f.employee){
     try{
