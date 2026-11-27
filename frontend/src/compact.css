@@ -25,3 +25,8 @@
 .sidebar-user .logout{flex-shrink:0;font-size:0;cursor:pointer}.sidebar-user .logout svg{margin:0}
 .icon-button.mobile-toggle{display:none}
 @media(max-width:800px){.icon-button.mobile-toggle{display:inline-flex}}
+
+.alert-card.neutral{border-color:var(--line);background:#fff;color:#15171c}
+.stats-grid.grid-cols-1{display:grid}
+.stats-grid .stat strong,.dashboard-stats .stat strong{white-space:normal}
+.text-link{font-size:10px;color:#ff6b00}

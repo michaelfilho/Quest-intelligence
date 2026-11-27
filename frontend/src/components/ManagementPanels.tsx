@@ -32,12 +32,12 @@ export function DreStatement({filters,onInfo}:{filters:Filters;onInfo:(id:string
 const alerts=[{id:'projetos_atrasados',label:'Projetos atrasados',path:'/projetos',tab:'visao'}, {id:'unidades_sem_estimativa',label:'Atividades sem estimativa',path:'/timesheet',tab:'todos'}, {id:'notas_ambiguas',label:'Notas com cliente em revisão',path:'/financeiro',tab:'receitas'}, {id:'despesas_rateio_divergente',label:'Despesas com rateio em revisão',path:'/financeiro',tab:'centros'}, {id:'tarefas_com_falhas',label:'Atualizações com falha',path:'/qualidade',tab:'visao'}, {id:'conflitos_abertos',label:'Atualizações em revisão',path:'/qualidade',tab:'visao'}];
 function AlertItem({item,filters}:{item:typeof alerts[number];filters:Filters}){
   const q=useIndicator(item.id,filters),r=q.data?.result,attention=r?.status==='OK'&&typeof r.value==='number'&&r.value>0;
-  return <Link to={{pathname:item.path,search:toQuery({...filterParams(filters),aba:item.tab})}} className={`rounded-lg border p-4 text-sm hover:border-q-orange ${attention?'border-q-orange bg-q-orange/5':'border-q-line'}`}>
+  return <Link to={{pathname:item.path,search:toQuery({...filterParams(filters),aba:item.tab})}} className={`alert-card block hover:border-q-orange ${attention?'amber':'neutral'}`}>
     <span className="block font-semibold">{item.label}</span><span className="mt-2 block text-xs text-q-mid">{!r?'Consultando…':r.status==='OK'?`${fmt(r.value,INDICATORS[item.id].unit)} no escopo selecionado`:shortState(r)}</span>
     {r?.status==='OK'&&<span className="mt-2 block"><ReliabilityBadge value={r.reliability}/></span>}
   </Link>;
 }
 export function AlertsPanel({filters,compact=false}:{filters:Filters;compact?:boolean}){
   const allowed=useCatalogCan(),items=alerts.filter(a=>allowed('indicators',a.id)&&(!compact||a.path!=='/qualidade'));
-  return items.length?<Panel title="Pontos de atenção" subtitle="Acesse um alerta para consultar seus detalhes."><div className="grid gap-3 px-5 pb-5 sm:grid-cols-2 xl:grid-cols-4">{items.map(item=><AlertItem key={item.id} item={item} filters={filters}/>)}</div></Panel>:null;
+  return items.length?<Panel title="Pontos de atenção" subtitle="Acesse um alerta para consultar seus detalhes."><div className="alerts-grid px-5 pb-5">{items.map(item=><AlertItem key={item.id} item={item} filters={filters}/>)}</div></Panel>:null;
 }

@@ -66,8 +66,8 @@ test('cache aquecido não consulta SQL e revogação real continua bloqueando o 
   const url=`/api/indicators/receita_recebida?${period}`;
   const cold=await viewer.req(url);assert.equal(cold.body.result.status,'OK');
   const before=sqlReads,warm=await viewer.req(url);assert.equal(sqlReads,before);assert.equal(warm.body.result.calculatedAt,cold.body.result.calculatedAt);
-  const {store}=await import('../src/store.js');
-  store().prepare('UPDATE users SET grants=?,denies=? WHERE id=?').run('[]','["financeiro.view"]',id);
+  const { all, get, run } = await import("../src/store.js");
+  (await run('UPDATE app.users SET grants=?,denies=? WHERE id=?', '[]','["financeiro.view"]',id));
   assert.equal((await viewer.req(url)).status,403);assert.equal(sqlReads,before);
 });
 test('resumo do módulo não executa cards/gráficos; gráfico possui autorização e endpoint próprio',async()=>{

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# ATUALIZAÇÃO NA VPS em um comando (docs/ATUALIZACAO_PRODUCAO.md):
+# ATUALIZAÇÃO de uma instalação existente, em um comando (docs/INSTALACAO_VPS.md):
 #   cd /opt/apps/quest-rinne-web && git fetch origin && git show origin/main:deploy/update.sh | bash
 # Opções: | bash -s -- [SHA] [--prepare-only]
-# Faz backup, preserva as imagens atuais, constrói, sobe somente api e web e valida.
-# Se a subida ou a validação falhar, volta sozinho para as imagens anteriores. Não toca no PostgreSQL,
-# no n8n, nos volumes, nos arquivos de ambiente nem no Traefik.
+# Faz backup do PostgreSQL, preserva as imagens atuais, constrói, aplica migrations, sobe somente api e
+# web e valida. Se falhar, volta sozinho para as imagens anteriores. Não altera n8n, volumes, arquivos
+# de ambiente, Traefik ou Tailscale. A primeira instalação é feita por deploy/install.sh.
 set -euo pipefail
 
 main() {
   umask 077
-  local source=/opt/apps/quest-rinne-web sha="" prepare_only=0 arg
+  local source=/opt/apps/quest-rinne-web runtime=/opt/apps/quest-rinne-web-runtime sha="" prepare_only=0 arg
   for arg in "$@"; do
     case "$arg" in
       --prepare-only) prepare_only=1 ;;
@@ -17,7 +17,11 @@ main() {
     esac
   done
   exec 9> /tmp/quest-rinne-update.lock
-  flock -n 9 || { echo 'Já existe uma atualização em andamento.' >&2; exit 1; }
+  flock -n 9 || { echo 'Já existe uma instalação ou atualização em andamento.' >&2; exit 1; }
+  if ! docker inspect quest-rinne-web-api-1 quest-rinne-web-web-1 > /dev/null 2>&1; then
+    echo 'Aplicação não instalada: use deploy/install.sh.' >&2
+    exit 1
+  fi
 
   cd "$source"
   git fetch --quiet origin
@@ -33,21 +37,20 @@ main() {
   stage="$(printf '%s\n' "$output" | sed -n 's/^Release: //p')"
   backup="$(printf '%s\n' "$output" | sed -n 's/^Backup privado: //p')"
   [[ -d "$stage" && -d "$backup" ]] || { echo 'Preparação sem release ou backup.' >&2; exit 1; }
-  if [[ -s "$backup/runtime-to-release.private.diff" ]]; then
-    echo "Atenção: a cópia runtime difere do código publicado. Revisar: $backup/runtime-to-release.private.diff"
-  fi
   if [[ "$prepare_only" == 1 ]]; then
-    echo 'Preparado. Nada foi construído nem reiniciado.'
+    echo 'Preparado. Nada foi construído, migrado nem reiniciado.'
     return 0
   fi
 
   # shellcheck disable=SC1091
   source "$stage/compose-args.private.sh" # define o array COMPOSE descoberto nos containers
   sha256sum --check --status "$backup/input-files.sha256"
-  sha256sum --check --status "$backup/app.db.sha256"
+  sha256sum --check --status "$backup/db.dump.sha256"
   "${COMPOSE[@]}" -f "$stage/compose.override.json" config --quiet
   "${COMPOSE[@]}" -f "$stage/compose.override.json" build api web
   sha256sum --check --status "$backup/input-files.sha256"
+  MIGRATION_DATABASE_URL="$(sed -n 's/^MIGRATION_DATABASE_URL=//p' "$runtime/deploy/secrets/migrate.env")" \
+    "${COMPOSE[@]}" -f "$stage/compose.override.json" run --rm --no-deps -T -e MIGRATION_DATABASE_URL api node_modules/.bin/tsx src/migrate.ts
 
   local ok=0 attempt
   if "${COMPOSE[@]}" -f "$stage/compose.override.json" up -d --no-deps --no-build api web; then
@@ -59,11 +62,12 @@ main() {
 
   if [[ "$ok" != 1 ]]; then
     echo "Validação falhou (tentativa ${attempt:-0}). Detalhes: $backup/check.log" >&2
-    echo 'Voltando para as imagens anteriores; o SQLite atual é mantido.' >&2
+    echo 'Voltando para as imagens anteriores; o banco atual é mantido (migrations não são desfeitas).' >&2
     "${COMPOSE[@]}" -f "$backup/rollback.private.json" up -d --no-deps --no-build api web
     exit 1
   fi
   cat "$backup/check.log"
+  printf '%s %s\n' "$sha" "$stage" > "$runtime/deploy/installed"
   echo 'Atualização concluída.'
   echo "Rollback manual, se necessário:"
   echo "  source '$stage/compose-args.private.sh' && \"\${COMPOSE[@]}\" -f '$backup/rollback.private.json' up -d --no-deps --no-build api web"

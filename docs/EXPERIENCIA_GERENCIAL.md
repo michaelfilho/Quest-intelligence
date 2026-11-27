@@ -1,5 +1,7 @@
 # Experiência gerencial — integração da fase 3
 
+> Registro histórico, anterior à instalação limpa em PostgreSQL. Caminhos, procedimentos e persistência citados podem ter mudado; vale [ARQUITETURA.md](ARQUITETURA.md).
+
 Revisão local de 25/11/2026, integrada às otimizações de [PERFORMANCE.md](PERFORMANCE.md). Sem push, deploy, acesso à VPS, alterações no PostgreSQL/n8n, credenciais ou novo banco analítico. Entrada real do frontend: `web/src/main.tsx`; não existe um `App.tsx` separado nesta aplicação.
 
 ## Menu e rotas
@@ -78,4 +80,4 @@ Cache, admissão de duas consultas pesadas, pool padrão de cinco, timeout de 15
 
 Reprodução do cenário com dados: `$env:HOMOLOG_ANALYTICS_FIXTURE='1'; npm run homologacao`. Para o prefixo, definir também `$env:VITE_BASE_PATH='/core/'`. O script cria SQLite temporário para autenticação e PGlite efêmero para testes; não acessa PostgreSQL externo ou `.env` de produção. O fixture está em `server/test`, não é copiado pelo Docker e exige modo de teste.
 
-Resultados locais não certificam produção. Ver [BENCHMARKS.md](BENCHMARKS.md). A entrega combina performance e UX em um único commit local, sem push. Quando a publicação e a atualização forem autorizadas, seguir [ATUALIZACAO_PRODUCAO.md](ATUALIZACAO_PRODUCAO.md), preservando os ajustes locais do runtime, SQLite, credenciais, volumes, role e Traefik.
+Resultados locais não certificam produção. Ver [BENCHMARKS.md](BENCHMARKS.md). A entrega combina performance e UX em um único commit local, sem push. Quando a publicação e a atualização forem autorizadas, seguir [INSTALACAO_VPS.md](INSTALACAO_VPS.md), preservando os ajustes locais do runtime, SQLite, credenciais, volumes, role e Traefik.

@@ -1,5 +1,7 @@
 # Performance — fase 3
 
+> Registro histórico, anterior à instalação limpa em PostgreSQL. Caminhos, procedimentos e persistência citados podem ter mudado; vale [ARQUITETURA.md](ARQUITETURA.md).
+
 Implementação local em 25/11/2026. Sem deploy, acesso à VPS, alterações no PostgreSQL/n8n ou novo banco analítico. O backend Express/TypeScript/pg continua consultando a conexão PostgreSQL configurada; SQLite permanece exclusivo da aplicação/autenticação. React/TanStack Query continua sem acesso direto ao banco.
 
 ## Causas encontradas e correções
@@ -63,6 +65,6 @@ Diagnóstico manual, pelo operador no backend configurado: `npm run diagnose:per
 
 ## Atualização da instalação existente
 
-Seguir [ATUALIZACAO_PRODUCAO.md](ATUALIZACAO_PRODUCAO.md), após publicação e autorização operacional. Buscar o SHA aprovado, executar `deploy/prepare-release.sh` desse SHA, revisar o diff privado com `/opt/apps/quest-rinne-web-runtime`, preservar os arquivos Compose/env efetivamente usados e só então construir/subir `api web` com o override gerado. Não copiar a fonte por cima do runtime. O preparador faz backup consistente do SQLite e preserva volumes, imagens de rollback, credenciais, role e Traefik.
+Seguir [INSTALACAO_VPS.md](INSTALACAO_VPS.md), após publicação e autorização operacional. Buscar o SHA aprovado, executar `deploy/prepare-release.sh` desse SHA, revisar o diff privado com `/opt/apps/quest-rinne-web-runtime`, preservar os arquivos Compose/env efetivamente usados e só então construir/subir `api web` com o override gerado. Não copiar a fonte por cima do runtime. O preparador faz backup consistente do SQLite e preserva volumes, imagens de rollback, credenciais, role e Traefik.
 
 Revalidar `/core/`, login/logout, cookie `Path=/core/` somente pelo backend, permissões, primeiro card, gráficos, módulos frios/quentes e exportações. Observar telemetria durante uma navegação, comparar fingerprints/esperas/contagens e verificar a atualização após publicação normal do n8n. Não executar workflows manualmente. Rodar `verify:analytics` para períodos conhecidos e o diagnóstico acima quando autorizado. Não declarar metas de produção cumpridas a partir do benchmark WASM.

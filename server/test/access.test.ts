@@ -2,14 +2,13 @@
 // IPs de "cliente" simulados via X-Forwarded-For (a API confia só em loopback como proxy).
 // Faixas de documentação (RFC 5737 / 3849): nenhum IP real.
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 
 process.env.IP_ALLOWLIST_BOOTSTRAP = "192.0.2.10, invalido"; // antes de carregar a API
-const { Client, createUser, DIR, startServer } = await import("./helpers.js");
+const { Client, createUser, appDb, startServer } = await import("./helpers.js");
 const { parseCidr, normalizeIp, loadAccess } = await import("../src/access.js");
-const { store } = await import("../src/store.js");
-const FILE = DIR + "/ip-allowlist.json";
+const { setAppDriver } = await import("../src/store.js");
+const { all, get, run } = await import("../src/store.js");
 
 const ME = "203.0.113.5";
 const OTHER = "198.51.100.7";
@@ -64,7 +63,8 @@ test("ativo: só IPs liberados (lista + bootstrap) acessam; alteração auditada
   const save = await put({ enabled: true, entries: [{ cidr: "203.0.113.0/24", label: "Escritório" }] });
   assert.equal(save.status, 200);
   assert.equal(save.body.updatedBy, "adm.ip");
-  assert.ok(JSON.parse(readFileSync(FILE, "utf8")).enabled); // persistido
+  assert.equal((await get("SELECT enabled FROM app.access_state"))!.enabled, true); // persistido
+  assert.deepEqual((await all("SELECT cidr FROM app.ip_allowlist")).map((e) => e.cidr), ["203.0.113.0/24"]);
 
   assert.equal((await anon("/api/health", ME)).status, 200);
   assert.equal((await anon("/api/access/check", ME)).status, 204); // consulta do nginx
@@ -74,8 +74,8 @@ test("ativo: só IPs liberados (lista + bootstrap) acessam; alteração auditada
   assert.deepEqual(blocked.body, { error: "Not Found" });
   assert.equal((await anon("/api/access/check", OTHER)).status, 403);
 
-  const ev = store().prepare("SELECT event, details FROM audit_log WHERE event IN ('ip_allowlist.update', 'access.blocked')").all();
-  assert.ok(ev.some((e) => e.event === "ip_allowlist.update" && String(e.details).includes("203.0.113.0/24")));
+  const ev = (await all("SELECT event, details FROM app.audit_log WHERE event IN ('ip_allowlist.update', 'access.blocked')"));
+  assert.ok(ev.some((e) => e.event === "ip_allowlist.update" && JSON.stringify(e.details).includes("203.0.113.0/24")));
   assert.ok(ev.some((e) => e.event === "access.blocked"));
 });
 
@@ -127,12 +127,12 @@ test("REQUIRE_PROXY: conexão fora dos proxies confiáveis é recusada", async (
   }
 });
 
-test("arquivo corrompido falha fechado", async () => {
-  writeFileSync(FILE, "{corrompido");
-  loadAccess();
-  assert.equal((await anon("/api/health", ME)).status, 404);
+test("banco indisponível ao carregar a lista falha fechado e se recupera", async () => {
+  setAppDriver({ query: async () => { throw new Error("indisponível"); } });
+  await loadAccess();
+  assert.notEqual((await anon("/api/health", ME)).status, 200);
   assert.equal((await anon("/api/health", "192.0.2.10")).status, 200); // bootstrap ainda entra
-  writeFileSync(FILE, JSON.stringify({ enabled: false, entries: [] }));
-  loadAccess();
-  assert.equal((await anon("/api/health", OTHER)).status, 200);
+  setAppDriver({ query: (sql, params) => appDb.query(sql, params) });
+  await loadAccess();
+  assert.equal((await anon("/api/health", ME)).status, 200);
 });

@@ -5,7 +5,7 @@ import { Client, createUser, startServer } from "./helpers.js";
 
 const { MODULES } = await import("../../shared/catalog.js");
 const { DEFAULT_ROLES, MODULE_PERMISSION } = await import("../../shared/permissions.js");
-const { store } = await import("../src/store.js");
+const { all, get, run } = await import("../src/store.js");
 
 let srv: Awaited<ReturnType<typeof startServer>>;
 const as: Record<string, Client> = {};
@@ -105,7 +105,7 @@ test("administração só para quem tem permissão", async () => {
   // Escalada: usuário comum não consegue se promover
   const me = (await as.u_analista.req("/api/auth/me")).body.id;
   assert.equal((await as.u_analista.req(`/api/admin/users/${me}`, { method: "PATCH", body: { roleId: "admin" } })).status, 403);
-  const denied = store().prepare("SELECT count(*) n FROM audit_log WHERE event = 'access.denied'").get()?.n;
+  const denied = (await get("SELECT count(*) n FROM app.audit_log WHERE event = 'access.denied'"))?.n;
   assert.ok(Number(denied) > 0);
 });
 
@@ -124,6 +124,6 @@ test("perfis: alteração vale na hora; Administrador é imutável; excluir perf
   assert.equal((await adm.req(`/api/admin/roles/${created.body.id}`, { method: "DELETE" })).status, 204);
   assert.equal((await as.comercial1.req("/api/modules/clientes")).status, 403);
   assert.equal((await adm.req("/api/admin/roles/diretoria", { method: "DELETE" })).status, 409);
-  const ev = store().prepare("SELECT event FROM audit_log WHERE event LIKE 'role.%'").all().map((r) => r.event);
+  const ev = (await all("SELECT event FROM app.audit_log WHERE event LIKE 'role.%'")).map((r) => r.event);
   assert.ok(ev.includes("role.permissions_update") && ev.includes("role.create") && ev.includes("role.delete"));
 });

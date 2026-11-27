@@ -65,7 +65,7 @@ Tempo médio de calendário continua calculado por `completed_at` no período, c
 
 ## Qualidade e atualização
 
-Consultas pontuais explícitas: publicação em `audit.qpf11_publication_state.published_at`; conflitos abertos/resolvidos por `audit.qpf11_publication_conflicts.resolved_at`; tarefas por status e diferença `expected_total/received_records`; páginas armazenadas e soma válida de `record_count`.
+Consultas pontuais explícitas: publicação em `audit.publication_state.published_at`; conflitos abertos/resolvidos por `audit.publication_conflicts.resolved_at`; tarefas por status e diferença `expected_total/received_records`; páginas armazenadas e soma válida de `record_count`.
 
 Recebidos em páginas e reportados em tarefas são apresentados separadamente: podem repetir registros e não equivalem a únicos publicados. Contagens não dependem de cobertura histórica integral. Conflitos são agrupados por estado sem expor payloads de auditoria.
 
@@ -77,10 +77,8 @@ As respostas distinguem fonte/critério pendente, campo ausente, cadastro incomp
 
 ## Verificação e operação
 
-Ver [TESTES.md](TESTES.md). Fixtures PostgreSQL ficam exclusivamente nos testes. Não foi aberto túnel nem solicitada credencial.
+Ver [RELATORIO_TESTES.md](RELATORIO_TESTES.md). Fixtures PostgreSQL ficam exclusivamente nos testes. Não foi aberto túnel nem solicitada credencial.
 
 `verify:analytics` é executado posteriormente dentro do backend já configurado: verifica horas e faturamento por referência SQL independente, nomes/relacionamentos, caixa versus seus registros, estimativas por unidade e qualidade por referência SQL. Publica apenas identificador da verificação e resultado/status. Campo/semântica ausente é `UNAVAILABLE`; erro ou divergência causa saída diferente de zero. Não imprime nomes, IDs empresariais ou valores. Códigos de saída: 0 aprovado, 1 erro/divergência, 2 parcial por fonte/critério indisponível. Nenhum resultado desse verificador em produção é declarado nesta revisão.
 
-Backup SQLite usa `VACUUM INTO`, integridade e streaming por `docker exec` sem TTY, inclusive com `/tmp` em tmpfs. Confere SHA-256 de origem e destino antes de concluir a cópia. A preparação verifica a API internamente, sem headers de proxy, mantendo o controle por IP. Não há rollback automático com base em HTTP externo. O procedimento preserva Compose/env, ajustes do runtime sujeitos a revisão, SQLite, volumes, role e Traefik: [ATUALIZACAO_PRODUCAO.md](ATUALIZACAO_PRODUCAO.md).
 
-Dados ainda necessários à coleta e decisões pendentes estão separados em [DADOS_COMPLEMENTARES_N8N.md](DADOS_COMPLEMENTARES_N8N.md). Nenhum workflow foi alterado.

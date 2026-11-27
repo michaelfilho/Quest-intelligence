@@ -97,12 +97,12 @@ try {
     return Math.abs(sum-Number(indicator.value))<1e-6;
   });
   for(const [id,schema,table,expression,fields] of [
-    ['ultima_publicacao_core','audit','qpf11_publication_state','max(published_at) FILTER (WHERE published_at<=CURRENT_TIMESTAMP)::text',['published_at']],
-    ['conflitos_abertos','audit','qpf11_publication_conflicts','count(*) FILTER (WHERE resolved_at IS NULL)::int',['resolved_at']],
-    ['conflitos_resolvidos','audit','qpf11_publication_conflicts','count(*) FILTER (WHERE resolved_at IS NOT NULL AND resolved_at<=CURRENT_TIMESTAMP)::int',['resolved_at']],
-    ['paginas_recebidas','ingest','qpf11_pages','count(*)::int',[]],
-    ['registros_recebidos','ingest','qpf11_pages',"sum(record_count) FILTER (WHERE record_count>=0 AND record_count::text NOT IN ('NaN','Infinity','-Infinity'))::float8",['record_count']],
-    ['divergencias_contagem','ingest','qpf11_tasks',`count(*) FILTER (WHERE expected_total>=0 AND received_records>=0 AND expected_total::text NOT IN ('NaN','Infinity','-Infinity') AND received_records::text NOT IN ('NaN','Infinity','-Infinity') AND expected_total<>received_records)::int`,['expected_total','received_records']],
+    ['ultima_publicacao_core','audit','publication_state','max(published_at) FILTER (WHERE published_at<=CURRENT_TIMESTAMP)::text',['published_at']],
+    ['conflitos_abertos','audit','publication_conflicts','count(*) FILTER (WHERE resolved_at IS NULL)::int',['resolved_at']],
+    ['conflitos_resolvidos','audit','publication_conflicts','count(*) FILTER (WHERE resolved_at IS NOT NULL AND resolved_at<=CURRENT_TIMESTAMP)::int',['resolved_at']],
+    ['paginas_recebidas','ingest','pages','count(*)::int',[]],
+    ['registros_recebidos','ingest','pages',"sum(record_count) FILTER (WHERE record_count>=0 AND record_count::text NOT IN ('NaN','Infinity','-Infinity'))::float8",['record_count']],
+    ['divergencias_contagem','ingest','tasks',`count(*) FILTER (WHERE expected_total>=0 AND received_records>=0 AND expected_total::text NOT IN ('NaN','Infinity','-Infinity') AND received_records::text NOT IN ('NaN','Infinity','-Infinity') AND expected_total<>received_records)::int`,['expected_total','received_records']],
   ] as const) await check(id,async()=>{
     if(!snapshot.columns.some(c=>c.schema===schema&&c.table===table)||!fields.every(column=>snapshot.columns.some(c=>c.schema===schema&&c.table===table&&c.column===column)))throw new SourceLimitation('Campo ausente');
     const [r]=await q(`SELECT ${expression} AS value FROM ${schema}.${table}`);
@@ -148,8 +148,8 @@ try {
     return Math.abs(Number(r.actual??0)-Number(rows[0].expected??0))<1e-6&&Math.abs(Number(indicator.value)-Number(r.actual??0))<1e-6&&points.every(p=>Number.isFinite(Number(p.despesa)));
   });
   await check('publication_state_rows',async()=>{
-    if(!snapshot.columns.some(c=>c.schema==='audit'&&c.table==='qpf11_publication_state'&&c.column==='source_id'))throw new SourceLimitation('Fonte ausente');
-    const [r]=await q('SELECT count(*)::int AS expected FROM audit.qpf11_publication_state');return Number((await verifiedIndicator('estados_publicacao')).value)===Number(r.expected);
+    if(!snapshot.columns.some(c=>c.schema==='audit'&&c.table==='publication_state'&&c.column==='source_id'))throw new SourceLimitation('Fonte ausente');
+    const [r]=await q('SELECT count(*)::int AS expected FROM audit.publication_state');return Number((await verifiedIndicator('estados_publicacao')).value)===Number(r.expected);
   });
   console.log(JSON.stringify({verification:failures?'FAIL':unavailable?'PARTIAL':'PASS'}));
   process.exitCode = failures ? 1 : unavailable?2:0;

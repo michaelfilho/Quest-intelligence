@@ -12,7 +12,8 @@
     "user:admin": "tsx src/cli.ts",
     "verify:analytics": "tsx src/verify-analytics.ts",
     "diagnose:performance": "tsx src/diagnose-performance.ts",
-    "benchmark": "tsx test/performance-benchmark.ts"
+    "benchmark": "tsx test/performance-benchmark.ts",
+    "db:migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
     "express": "^5.3.0",

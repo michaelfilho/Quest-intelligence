@@ -24,8 +24,8 @@ function Integrations() {
   const db = health.data?.database;
   const items = [
     { icon: Database, name: "PostgreSQL quest_rinne", tag: "SOMENTE LEITURA", desc: "Fonte oficial. Schemas core (consumo), ingest (coletas) e audit (conflitos).", status: health.isError ? "API inacessível" : db ? DB_LABEL[db] : "Verificando…", ok: db === "CONNECTED" },
-    { icon: Workflow, name: "iClips API → n8n (QPF-00)", tag: "INGESTÃO", desc: "Sincronização externa gerenciada pelo n8n. Esta aplicação apenas lê o resultado e nunca altera workflows.", status: "Gerenciado fora da aplicação", ok: false },
-    { icon: Database, name: "Banco da aplicação (SQLite)", tag: "PERSISTENTE", desc: "Usuários, perfis, sessões, auditoria e configurações. Isolado do banco analítico; volume server/data.", status: "Ativo", ok: true },
+    { icon: Workflow, name: "n8n (camada de integração)", tag: "INGESTÃO", desc: "As coletas serão feitas por workflows especializados (docs/CONTRATOS_N8N.md). A aplicação apenas lê o que for publicado.", status: "Aguarda integração", ok: false },
+    { icon: Database, name: "PostgreSQL (schema app)", tag: "PERSISTENTE", desc: "Usuários, perfis, sessões, auditoria e configurações, com role própria separada da leitura analítica.", status: "Ativo", ok: true },
   ];
   return (
     <Panel title="Integrações" subtitle={<><Plug size={13} className="text-q-orange" /> Conectores de dados</>}>

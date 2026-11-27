@@ -22,8 +22,8 @@ before(async () => {
       (5,NULL,1,'A Receber',1000,NULL,'2026-01-01'),
       (6,NULL,1,'Entrada',9000,'2099-01-01','2026-01-01');
     CREATE SCHEMA ingest;
-    CREATE TABLE ingest.qpf11_tasks (status text, updated_at timestamptz);
-    INSERT INTO ingest.qpf11_tasks VALUES ('RECONCILE_REQUIRED','2026-01-01'),('RECEIVED','2026-01-02');`);
+    CREATE TABLE ingest.tasks (status text, updated_at timestamptz);
+    INSERT INTO ingest.tasks VALUES ('RECONCILE_REQUIRED','2026-01-01'),('RECEIVED','2026-01-02');`);
   schema = await discoverSchema(reader);
 });
 after(async () => pg.close());

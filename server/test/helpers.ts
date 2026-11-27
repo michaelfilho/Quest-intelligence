@@ -1,4 +1,4 @@
-// Ambiente isolado por arquivo de teste: SQLite temporário, sem PostgreSQL, sem serviços externos.
+// Ambiente isolado por arquivo de teste: PostgreSQL embutido, sem serviços externos.
 // Usuários e senhas aqui são fixtures de teste (nunca usados fora dos testes).
 import { mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
@@ -8,17 +8,19 @@ import { join } from "node:path";
 export const DIR = mkdtempSync(join(tmpdir(), "rinne-test-"));
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL = "";
-process.env.DATA_DIR = DIR;
-process.env.IP_ALLOWLIST_FILE = join(DIR, "ip-allowlist.json");
 process.env.COOKIE_SECURE = "false";
 
 const { createApp } = await import("../src/app.js");
-const { store, closeStore, now } = await import("../src/store.js");
+const { get, now, setAppDriver } = await import("../src/store.js");
+const { loadAccess } = await import("../src/access.js");
+const { useAppDatabase } = await import("./app-db.js");
+export const appDb = await useAppDatabase();
 const { hashPassword } = await import("../src/passwords.js");
 
 export const PASSWORD = "Senha-de-teste-forte-123";
 
 export async function startServer() {
+  await loadAccess();
   const server = createApp().listen(0);
   await new Promise((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -26,7 +28,8 @@ export async function startServer() {
     base,
     stop: () => {
       server.close();
-      closeStore();
+      setAppDriver(null);
+      void appDb.close();
       rmSync(DIR, { recursive: true, force: true });
     },
   };
@@ -34,10 +37,9 @@ export async function startServer() {
 
 export async function createUser(username: string, roleId: string | null, o: { grants?: string[]; denies?: string[]; scope?: string; mustChange?: boolean; active?: boolean; password?: string } = {}) {
   const t = now();
-  const r = store()
-    .prepare("INSERT INTO users (username, name, password_hash, role_id, grants, denies, scope_department, active, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .run(username, username, await hashPassword(o.password ?? PASSWORD), roleId, JSON.stringify(o.grants ?? []), JSON.stringify(o.denies ?? []), o.scope ?? null, o.active === false ? 0 : 1, o.mustChange ? 1 : 0, t, t);
-  return Number(r.lastInsertRowid);
+  const r = await get("INSERT INTO app.users (username, name, password_hash, role_id, grants, denies, scope_department, active, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+    username, username, await hashPassword(o.password ?? PASSWORD), roleId, JSON.stringify(o.grants ?? []), JSON.stringify(o.denies ?? []), o.scope ?? null, o.active !== false, !!o.mustChange, t, t);
+  return Number(r!.id);
 }
 
 /** Cliente HTTP com cookie de sessão e IP simulado (X-Forwarded-For; a API confia em loopback como proxy). */

@@ -10,7 +10,11 @@
     "test": "npm --prefix server test && npm --prefix frontend test",
     "build": "npm --prefix server run typecheck && npm --prefix frontend run build",
     "docs:indicators": "npm --prefix server run docs:indicators",
-    "homologacao": "npm run build && node scripts/homologar.mjs"
+    "homologacao": "npm run build && node scripts/homologar.mjs",
+    "test:install": "node scripts/test-install.mjs",
+    "db:migrate": "npm --prefix server run db:migrate",
+    "test:deploy": "node scripts/test-deploy.mjs",
+    "docs:database": "node scripts/gen-dictionary.mjs"
   },
   "type": "module"
 }

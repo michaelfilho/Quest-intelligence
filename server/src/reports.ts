@@ -87,7 +87,8 @@ export async function buildReport(u: SessionUser, d: ReportDef, f: Filters) {
     const res = await resolveTable(t, f, { page: 1, pageSize: 1000 }, state);
     tables.push({ id: t, label: def.label, columns: allowedColumns(u, def), rows: stripRows(u, def, res.rows), total: res.total, status: res.status, reason: res.reason ?? null });
   }
-  const dataAvailable = indicators.some((i) => i.status === "OK");
+  // Contagem zero sem nenhum registro utilizado não é dado calculado (instalação sem coletas).
+  const dataAvailable = indicators.some((i) => i.status === "OK" && i.recordsUsed !== 0);
   const limitations = [
     ...tables.filter(t=>(t.rows as unknown[]).length<Number(t.total)).map(t=>`${t.label}: esta exportação contém ${(t.rows as unknown[]).length} de ${t.total} registros; refine os filtros para reduzir o volume.`),
     ...(state !== "CONNECTED" ? ["Banco de dados indisponível: este relatório NÃO contém valores calculados."] : []),
@@ -174,7 +175,7 @@ export function reportsRouter() {
     try {
       const rep = await buildReport(req.user!, d, scopeFilters(req.user!, p.data));
       if (format === "json") return res.json(rep);
-      audit({ event: "report.export", actorId: req.user!.id, actor: req.user!.username, target: d.id, details: { format, dataAvailable: rep.dataAvailable } });
+      await audit({ event: "report.export", actorId: req.user!.id, actor: req.user!.username, target: d.id, details: { format, dataAvailable: rep.dataAvailable } });
       const name = `rinne_${d.id}_${rep.period.start}_${rep.period.end}`;
       if (format === "csv") return res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.csv"` }).send(toCsv(rep));
       if (format === "md") return res.set({ "Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.md"` }).send(toMarkdown(rep));

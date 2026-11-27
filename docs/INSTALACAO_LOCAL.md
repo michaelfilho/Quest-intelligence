@@ -1,49 +1,26 @@
-# Instalação local (Windows 11)
+# Execução local
 
-## Requisitos
-
-- **Node.js 24.7 ou superior**: Argon2id e SQLite vêm da biblioteca padrão. Testado nesta execução com 24.19.0.
-- Microsoft Edge ou Chrome (a homologação visual usa o Edge instalado).
-- Docker é opcional e não existe nesta máquina.
-
-## Instalação
+Requer Node 24.7+ e um PostgreSQL **local e descartável** (nunca o da VPS).
 
 ```bash
-npm run setup              # instala server/, frontend/ e e2e/ com os lockfiles
-cp .env.example .env       # opcional; sem .env a API sobe sem banco
+npm run setup
 ```
 
-O `.env` do projeto prevalece sobre a `DATABASE_URL` herdada do Windows (que existe nesta máquina e pertence a outro projeto). Para as demais variáveis, valem as da linha de comando.
+1. Crie o banco e as roles (como superusuário local):
+   ```bash
+   psql -d postgres -c "CREATE DATABASE quest_rinne"
+   psql -d postgres -v db=quest_rinne -v migrator_password=<m> -v app_password=<a> -v reader_password=<r> -f server/db/bootstrap.sql
+   ```
+2. No `.env` da raiz (não versionado): `DATABASE_URL` (`qi_reader`), `APP_DATABASE_URL` (`qi_app`) e `COOKIE_SECURE=false`.
+3. Migrations e administrador:
+   ```bash
+   MIGRATION_DATABASE_URL=postgres://qi_migrator:<m>@127.0.0.1:5432/quest_rinne npm run db:migrate
+   npm --prefix server run user:admin -- <usuario> "Nome"
+   ```
+4. Suba:
+   ```bash
+   npm run dev:api   # http://127.0.0.1:3333
+   npm run dev:web   # http://localhost:5173
+   ```
 
-## Executar
-
-```bash
-npm run dev:api            # terminal 1 → API em http://127.0.0.1:3333
-npm run dev:web            # terminal 2 → http://localhost:5173
-npm --prefix server run user:admin -- <usuario> "Nome"   # 1º acesso (senha temporária exibida uma vez)
-```
-
-Abra **http://localhost:5173**, entre com a senha temporária e defina a sua. Os dados internos (usuários, sessões e configurações) ficam em `server/data/app.db`, que é ignorado pelo git.
-
-Sem o PostgreSQL, a aplicação funciona e mostra os estados de indisponibilidade:
-- todas as telas, a autenticação, as permissões e as configurações funcionam;
-- os indicadores aparecem como "Sem conexão com o banco", nunca como zero;
-- os relatórios saem marcados como "DADOS INDISPONÍVEIS".
-
-## Verificações
-
-```bash
-npm run typecheck          # server + web
-npm test                   # 45 testes da API (node:test) + 12 da interface (vitest)
-npm run build              # build de produção do web
-npm --prefix server audit && npm --prefix web audit
-npm run homologacao  # homologação visual (Playwright + Edge, build de produção, banco temporário)
-```
-
-## Problemas comuns
-
-| sintoma | causa / solução |
-|---|---|
-| `Node.js sem crypto.argon2` | atualize para Node 24.7+ |
-| porta 3333 ocupada | outra API em execução; encerre-a ou use `PORT=…` |
-| "Seu IP atual" = 127.0.0.1 | normal no dev (o Vite repassa do loopback) |
+Sem preparar um banco, `npm run homologacao` cria um PostgreSQL temporário, executa a navegação e o descarta.

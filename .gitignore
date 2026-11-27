@@ -50,3 +50,5 @@ docs/complemento.txt
 # Introspecção e diagnósticos internos produzidos na infraestrutura
 docs/schema-snapshot.json
 docs/DICIONARIO_DADOS.md
+deploy/secrets/
+deploy/installed

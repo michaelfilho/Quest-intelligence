@@ -22,6 +22,8 @@ export function limitationCode(reason:string):NonNullable<IndicatorResult['reaso
   if (/critério gerencial|classificação|jornadas|capacidade contratada|critério.*entrega|rateio.*aprovad/i.test(reason)) return 'BUSINESS_POLICY_PENDING';
   if (/campo ausente|coluna .*não encontrada|tipo.*incompatível|timestamp.*não confirmado/i.test(reason)) return 'MISSING_FIELD';
   if (/cadastro.*nome|cadastro incompleto/i.test(reason)) return 'INCOMPLETE_REGISTRY';
+  // A frase inicial diz que não há dado; a menção a vínculo no restante é só ressalva.
+  if (/^(nenhum valor|sem valores|sem registros)/i.test(reason)) return 'NO_RECORDS';
   if (/vínculo|chave.*duplicad|relacionamento|namespace|órfã|referência/i.test(reason)) return 'INVALID_RELATIONSHIP';
   if (/cobertura|subconjunto/i.test(reason)) return 'PARTIAL_COVERAGE';
   if (/nenhum|sem registros|sem tarefas|sem valores|sem timestamp/i.test(reason)) return 'NO_RECORDS';

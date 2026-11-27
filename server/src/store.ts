@@ -1,59 +1,59 @@
-// Banco próprio da aplicação (SQLite, stdlib node:sqlite): usuários, perfis, sessões, auditoria, configurações.
-// Isolado do PostgreSQL analítico. Arquivo em DATA_DIR (volume persistente em produção).
+// Persistência da aplicação no PostgreSQL (schema app, role qi_app): usuários, perfis, sessões, auditoria,
+// configurações e controle de acesso. Separada da conexão analítica somente leitura (db.ts).
 import "./env.js";
-import { mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
+import pg from "pg";
 import { DEFAULT_ROLES } from "../../shared/permissions.js";
 
-export const DATA_DIR = process.env.DATA_DIR || fileURLToPath(new URL("../data", import.meta.url));
-const MIGRATIONS = fileURLToPath(new URL("../migrations", import.meta.url));
+export type Row = Record<string, any>;
+export interface AppDriver {
+  query(sql: string, params: unknown[]): Promise<{ rows: Row[]; rowCount?: number | null; affectedRows?: number }>;
+}
+
+let driver: AppDriver | null = null;
+let pool: pg.Pool | null = null;
+/** Somente testes: substitui o pool por um PostgreSQL embutido. */
+export const setAppDriver = (d: AppDriver | null) => { driver = d; };
+
+function appDriver(): AppDriver {
+  if (driver) return driver;
+  if (!pool) {
+    const url = new URL(process.env.APP_DATABASE_URL || "invalid:");
+    const expected = process.env.DATABASE_NAME ?? "quest_rinne";
+    if (!/^postgres(ql)?:$/.test(url.protocol) || decodeURIComponent(url.pathname.slice(1)) !== expected || url.username === "postgres") {
+      throw new Error(`APP_DATABASE_URL ausente ou inválida: exige PostgreSQL, banco ${expected} e usuário diferente de postgres.`);
+    }
+    pool = new pg.Pool({ connectionString: process.env.APP_DATABASE_URL, max: 5, connectionTimeoutMillis: 3000, options: "-c statement_timeout=15000" });
+    pool.on("error", () => console.error(JSON.stringify({ level: "error", msg: "pg app pool" })));
+  }
+  return pool;
+}
 
 export const now = () => new Date().toISOString();
 
-let db: DatabaseSync | null = null;
-
-export function store() {
-  if (db) return db;
-  mkdirSync(DATA_DIR, { recursive: true });
-  db = new DatabaseSync(join(DATA_DIR, "app.db"));
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
-  migrate(db);
-  seed(db);
-  return db;
-}
-
-/** Aplica migrations/*.sql em ordem, uma única vez cada, dentro de transação. */
-function migrate(d: DatabaseSync) {
-  d.exec("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-  const done = new Set(d.prepare("SELECT name FROM schema_migrations").all().map((r) => String(r.name)));
-  for (const file of readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort()) {
-    if (done.has(file)) continue;
-    d.exec("BEGIN");
-    try {
-      d.exec(readFileSync(join(MIGRATIONS, file), "utf8"));
-      d.prepare("INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)").run(file, now());
-      d.exec("COMMIT");
-      console.log(JSON.stringify({ level: "info", scope: "store", msg: "migration aplicada", file }));
-    } catch (e) {
-      d.exec("ROLLBACK");
-      throw e;
-    }
-  }
-}
+/** SQL com "?" como marcador; valores sempre parametrizados. */
+const run_ = (sql: string, params: unknown[]) => {
+  let n = 0;
+  return appDriver().query(sql.replace(/\?/g, () => `$${++n}`), params);
+};
+export const all = async (sql: string, ...params: unknown[]) => (await run_(sql, params)).rows;
+export const get = async (sql: string, ...params: unknown[]) => (await run_(sql, params)).rows[0] as Row | undefined;
+export const run = async (sql: string, ...params: unknown[]) => {
+  const r = await run_(sql, params);
+  return Number(r.affectedRows ?? r.rowCount ?? 0);
+};
 
 /** Perfis padrão: criados se não existirem. O Administrador é sempre ressincronizado com TODAS as permissões. */
-function seed(d: DatabaseSync) {
-  const ins = d.prepare("INSERT OR IGNORE INTO roles (id, name, description, permissions, system, updated_at) VALUES (?, ?, ?, ?, 1, ?)");
-  for (const r of DEFAULT_ROLES) ins.run(r.id, r.name, r.description, JSON.stringify(r.permissions), now());
+export async function seedRoles() {
+  for (const r of DEFAULT_ROLES) {
+    await run("INSERT INTO app.roles (id, name, description, permissions, system) VALUES (?, ?, ?, ?, true) ON CONFLICT (id) DO NOTHING", r.id, r.name, r.description, JSON.stringify(r.permissions));
+  }
   const admin = DEFAULT_ROLES.find((r) => r.id === "admin")!;
-  d.prepare("UPDATE roles SET permissions = ? WHERE id = 'admin'").run(JSON.stringify(admin.permissions));
+  await run("UPDATE app.roles SET permissions = ? WHERE id = 'admin'", JSON.stringify(admin.permissions));
 }
 
-export function closeStore() {
-  db?.close();
-  db = null;
+export async function closeStore() {
+  await pool?.end();
+  pool = null;
 }
 
 // ---------------- Configurações persistentes ----------------
@@ -68,17 +68,18 @@ export const SETTING_DEFAULTS = {
 } as const;
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 
-export function getSetting<K extends SettingKey>(key: K): (typeof SETTING_DEFAULTS)[K] {
-  const row = store().prepare("SELECT value FROM app_settings WHERE key = ?").get(key);
-  return row ? JSON.parse(String(row.value)) : SETTING_DEFAULTS[key];
+export async function getSetting<K extends SettingKey>(key: K): Promise<(typeof SETTING_DEFAULTS)[K]> {
+  const row = await get("SELECT value FROM app.app_settings WHERE key = ?", key);
+  return row ? row.value : SETTING_DEFAULTS[key];
 }
 
-export function allSettings() {
-  return Object.fromEntries((Object.keys(SETTING_DEFAULTS) as SettingKey[]).map((k) => [k, getSetting(k)]));
+export async function allSettings() {
+  const stored = new Map((await all("SELECT key, value FROM app.app_settings")).map((r) => [r.key, r.value]));
+  return Object.fromEntries((Object.keys(SETTING_DEFAULTS) as SettingKey[]).map((k) => [k, stored.get(k) ?? SETTING_DEFAULTS[k]]));
 }
 
-export function setSetting(key: SettingKey, value: unknown, by: string) {
-  store().prepare("INSERT INTO app_settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by").run(key, JSON.stringify(value), now(), by);
+export async function setSetting(key: SettingKey, value: unknown, by: string) {
+  await run("INSERT INTO app.app_settings (key, value, updated_by) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now(), updated_by = excluded.updated_by", key, JSON.stringify(value), by);
 }
 
 // ---------------- Auditoria ----------------
@@ -96,18 +97,16 @@ export interface AuditEvent {
 const SECRET_KEY = /pass|senha|token|secret|key|cookie|authorization|hash/i;
 const scrub = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => !SECRET_KEY.test(k)));
 
-export function audit(e: AuditEvent) {
+export async function audit(e: AuditEvent) {
   try {
-    store().prepare("INSERT INTO audit_log (at, event, outcome, actor_id, actor, ip, target, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(now(), e.event, e.outcome ?? "success", e.actorId ?? null, e.actor ?? null, e.ip ?? null, e.target ?? null, JSON.stringify(scrub(e.details ?? {})));
+    await run("INSERT INTO app.audit_log (event, outcome, actor_id, actor, ip, target, details) VALUES (?, ?, ?, ?, ?, ?, ?)", e.event, e.outcome ?? "success", e.actorId ?? null, e.actor ?? null, e.ip ?? null, e.target ?? null, JSON.stringify(scrub(e.details ?? {})));
   } catch (err) {
     console.error(JSON.stringify({ level: "error", scope: "audit", msg: (err as Error).message, event: e.event }));
   }
 }
 
-const daysAgo = (d: number) => new Date(Date.now() - d * 86400000).toISOString();
-
-/** Retenção: remove eventos de auditoria mais antigos que AUDIT_RETENTION_DAYS (padrão 365). */
-export function pruneAudit() {
-  const d = store();
-  d.prepare("DELETE FROM audit_log WHERE at < ?").run(daysAgo(Number(process.env.AUDIT_RETENTION_DAYS ?? 365)));
+/** Retenção: remove auditoria antiga (AUDIT_RETENTION_DAYS, padrão 365) e sessões expiradas. */
+export async function pruneAudit() {
+  await run("DELETE FROM app.audit_log WHERE at < ?", new Date(Date.now() - Number(process.env.AUDIT_RETENTION_DAYS ?? 365) * 86400000).toISOString());
+  await run("DELETE FROM app.sessions WHERE expires_at < ?", now());
 }

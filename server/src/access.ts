@@ -1,22 +1,19 @@
 // Controle de acesso por IP (allowlist). Quando ativo, só IPs/CIDRs liberados acessam o site e a API.
 //
-// - Persistência em arquivo JSON (o banco é somente leitura): IP_ALLOWLIST_FILE, padrão server/data/ip-allowlist.json.
+// - Persistência no PostgreSQL (app.access_state e app.ip_allowlist); a lista fica em memória e é relida ao salvar.
 // - Break-glass: IP_ALLOWLIST_BOOTSTRAP="200.1.2.3,10.0.0.0/8" — sempre liberados, não editáveis pela interface.
 // - Gestão exige sessão com a permissão ip.manage; toda alteração vai para a auditoria.
 // - REQUIRE_PROXY=true: recusa conexões que não venham de um proxy em TRUST_PROXY (ninguém contorna o nginx).
 // - O nginx consulta GET /api/access/check (auth_request) a cada requisição do site.
 // - IP fora da lista recebe 404 (como se não houvesse site) e entra em ip_requests para autorizar ou excluir.
-// - Arquivo corrompido = falha FECHADA (bloqueia tudo exceto bootstrap e loopback local).
+// - Banco indisponível na leitura = falha FECHADA (bloqueia tudo exceto bootstrap e loopback local).
 import "./env.js";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { BlockList, isIP } from "node:net";
-import { dirname, join } from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { clearIpLock, listIpLocks, requireAuth, requirePerm } from "./auth.js";
-import { audit, DATA_DIR, store } from "./store.js";
+import { all, audit, get, run } from "./store.js";
 
-const FILE = process.env.IP_ALLOWLIST_FILE || join(DATA_DIR, "ip-allowlist.json");
 const log = (level: string, msg: string, extra: object = {}) => console[level === "info" ? "log" : "warn"](JSON.stringify({ level, scope: "access", msg, ...extra }));
 
 // ---------------- IP / CIDR ----------------
@@ -83,24 +80,36 @@ function apply(s: State) {
   list = buildList([...BOOTSTRAP, ...s.entries.map((e) => e.cidr)]);
 }
 
-export function loadAccess() {
-  if (!existsSync(FILE)) return apply({ enabled: false, entries: [], updatedAt: null });
+let loaded = false;
+export async function loadAccess() {
   try {
-    const raw = JSON.parse(readFileSync(FILE, "utf8"));
-    const parsed = putSchema.parse(raw);
-    apply({ ...parsed, updatedAt: raw.updatedAt ?? null, updatedBy: raw.updatedBy });
+    const control = await get("SELECT enabled, updated_at, updated_by FROM app.access_state");
+    const entries = await all("SELECT cidr, label, added_at FROM app.ip_allowlist ORDER BY added_at, cidr");
+    apply({
+      enabled: !!control?.enabled,
+      entries: entries.map((e) => ({ cidr: e.cidr, label: e.label, addedAt: new Date(e.added_at).toISOString() })),
+      updatedAt: control?.updated_at ? new Date(control.updated_at).toISOString() : null,
+      updatedBy: control?.updated_by ?? undefined,
+    });
+    loaded = true;
   } catch (e) {
-    log("error", "arquivo da allowlist inválido — falha FECHADA (somente bootstrap e loopback)", { file: FILE, error: (e as Error).message });
+    log("error", "controle de acesso indisponível no banco — falha FECHADA (somente bootstrap e loopback)", { error: (e as Error).message });
     apply({ enabled: true, entries: [], updatedAt: null });
+    loaded = false;
   }
 }
-loadAccess();
 
-function save(s: State) {
-  mkdirSync(dirname(FILE), { recursive: true });
-  const tmp = FILE + ".tmp";
-  writeFileSync(tmp, JSON.stringify(s, null, 2), { mode: 0o600 });
-  renameSync(tmp, FILE); // escrita atômica
+/** Grava estado e lista em uma única instrução (atômica). */
+async function save(s: State) {
+  await run(
+    `WITH control AS (UPDATE app.access_state SET enabled = ?, updated_at = ?, updated_by = ?),
+          removed AS (DELETE FROM app.ip_allowlist WHERE NOT (cidr = ANY(?::text[])))
+     INSERT INTO app.ip_allowlist (cidr, label, added_at)
+     SELECT * FROM unnest(?::text[], ?::text[], ?::timestamptz[])
+     ON CONFLICT (cidr) DO UPDATE SET label = excluded.label`,
+    s.enabled, s.updatedAt, s.updatedBy ?? null, s.entries.map((e) => e.cidr),
+    s.entries.map((e) => e.cidr), s.entries.map((e) => e.label), s.entries.map((e) => e.addedAt ?? s.updatedAt)
+  );
   apply(s);
 }
 
@@ -113,57 +122,59 @@ const fromTrustedProxy = (req: Request) => !!req.app.get("trust proxy fn")?.(nor
 
 // Auditoria de bloqueios com no máximo 1 registro por IP por minuto (evita inundar o log em ataque).
 const lastBlockedAudit = new Map<string, number>();
-function auditBlocked(ip: string, path: string, reason: string) {
+async function auditBlocked(ip: string, path: string, reason: string) {
   log("warn", "acesso bloqueado", { ip, path, reason });
   if ((lastBlockedAudit.get(ip) ?? 0) > Date.now() - 60000) return;
   if (lastBlockedAudit.size > 10000) lastBlockedAudit.clear();
   lastBlockedAudit.set(ip, Date.now());
-  audit({ event: "access.blocked", outcome: "denied", ip, target: path, details: { reason } });
+  await audit({ event: "access.blocked", outcome: "denied", ip, target: path, details: { reason } });
 }
 
 const MAX_PENDING = 2000;
 /** Registra o IP recusado (no máximo 1 escrita por minuto por IP; excluídos continuam excluídos). */
-function recordRequest(ip: string, userAgent: string) {
+async function recordRequest(ip: string, userAgent: string) {
   if (!isIP(ip)) return;
-  const now = new Date().toISOString();
-  const { changes } = store()
-    .prepare("INSERT INTO ip_requests (ip, first_seen, last_seen, user_agent) VALUES (?, ?, ?, ?) ON CONFLICT(ip) DO UPDATE SET last_seen = excluded.last_seen, user_agent = excluded.user_agent WHERE last_seen < ?")
-    .run(ip, now, now, userAgent.slice(0, 200), new Date(Date.now() - 60000).toISOString());
-  if (changes) store().prepare("DELETE FROM ip_requests WHERE ip IN (SELECT ip FROM ip_requests WHERE status = 'pending' ORDER BY last_seen DESC LIMIT -1 OFFSET ?)").run(MAX_PENDING);
+  const at = new Date().toISOString();
+  const changes = await run(
+    "INSERT INTO app.ip_requests AS r (ip, first_seen, last_seen, user_agent) VALUES (?, ?, ?, ?) ON CONFLICT (ip) DO UPDATE SET last_seen = excluded.last_seen, user_agent = excluded.user_agent WHERE r.last_seen < ?",
+    ip, at, at, userAgent.slice(0, 200), new Date(Date.now() - 60000).toISOString()
+  );
+  if (changes) await run("DELETE FROM app.ip_requests WHERE ip IN (SELECT ip FROM app.ip_requests WHERE status = 'pending' ORDER BY last_seen DESC OFFSET ?)", MAX_PENDING);
 }
 
-export function accessGuard(req: Request, res: Response, next: NextFunction) {
+export async function accessGuard(req: Request, res: Response, next: NextFunction) {
   if (directLoopback(req)) return next();
   // REQUIRE_PROXY=true (produção): só aceita conexões vindas do proxy confiável — ninguém contorna o nginx.
   if (process.env.REQUIRE_PROXY === "true" && !fromTrustedProxy(req)) {
-    auditBlocked(normalizeIp(req.socket.remoteAddress), req.path, "conexão fora do proxy confiável");
+    await auditBlocked(normalizeIp(req.socket.remoteAddress), req.path, "conexão fora do proxy confiável");
     return res.status(403).json({ error: "Acesso direto à API não permitido." });
   }
+  if (!loaded) await loadAccess(); // banco voltou: relê antes de decidir
   if (!state.enabled || check(list, clientIp(req))) return next();
-  auditBlocked(clientIp(req), req.path, "IP fora da allowlist");
-  recordRequest(clientIp(req), String(req.headers["user-agent"] ?? ""));
+  await auditBlocked(clientIp(req), req.path, "IP fora da allowlist");
+  await recordRequest(clientIp(req), String(req.headers["user-agent"] ?? ""));
   // O auth_request do nginx só entende 2xx/401/403: a consulta usa 403 e o nginx devolve 404 ao navegador.
   res.status(req.path === "/access/check" ? 403 : 404).json({ error: "Not Found" });
 }
 
 // ---------------- Gestão (sessão com permissão ip.manage) ----------------
-const view = (req: Request) => ({
+const view = async (req: Request) => ({
   enabled: state.enabled,
   entries: state.entries,
   bootstrap: BOOTSTRAP,
   updatedAt: state.updatedAt,
   updatedBy: state.updatedBy ?? null,
   ip: clientIp(req),
-  requests: store().prepare("SELECT ip, status, first_seen, last_seen, user_agent FROM ip_requests ORDER BY last_seen DESC LIMIT 200").all(),
-  locks: listIpLocks(),
+  requests: await all("SELECT ip, status, first_seen, last_seen, user_agent FROM app.ip_requests ORDER BY last_seen DESC LIMIT 200"),
+  locks: await listIpLocks(),
 });
 
 export function accessRouter() {
   const r = express.Router();
   r.get("/me", (req, res) => res.json({ enabled: state.enabled, ip: clientIp(req) }));
   r.get("/check", (_req, res) => res.status(204).end()); // chegou aqui = passou pelo accessGuard (consulta do nginx)
-  r.get("/", requireAuth, requirePerm("ip.manage"), (req, res) => res.json(view(req)));
-  r.put("/", requireAuth, requirePerm("ip.manage"), express.json({ limit: "64kb" }), (req, res) => {
+  r.get("/", requireAuth, requirePerm("ip.manage"), async (req, res) => res.json(await view(req)));
+  r.put("/", requireAuth, requirePerm("ip.manage"), express.json({ limit: "64kb" }), async (req, res) => {
     const p = putSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: "Lista inválida", details: p.error.issues.map((i) => ({ campo: i.path.join("."), erro: i.message })) });
     const now = new Date().toISOString();
@@ -176,30 +187,30 @@ export function accessRouter() {
     const before = new Set(state.entries.map((e) => e.cidr));
     const after = new Set(entries.map((e) => e.cidr));
     const wasEnabled = state.enabled;
-    save({ enabled: p.data.enabled, entries, updatedAt: now, updatedBy: req.user!.username });
-    audit({ event: "ip_allowlist.update", actorId: req.user!.id, actor: req.user!.username, ip, details: { enabled: p.data.enabled, wasEnabled, added: [...after].filter((x) => !before.has(x)), removed: [...before].filter((x) => !after.has(x)) } });
-    res.json(view(req));
+    await save({ enabled: p.data.enabled, entries, updatedAt: now, updatedBy: req.user!.username });
+    await audit({ event: "ip_allowlist.update", actorId: req.user!.id, actor: req.user!.username, ip, details: { enabled: p.data.enabled, wasEnabled, added: [...after].filter((x) => !before.has(x)), removed: [...before].filter((x) => !after.has(x)) } });
+    res.json(await view(req));
   });
   // allow = autorizar · dismiss = excluir a notificação (segue em 404) · unlock = zerar o bloqueio de login
   const requestSchema = z.object({ ip: z.string().trim().max(64).refine((s) => isIP(normalizeIp(s)) !== 0, "IP inválido"), action: z.enum(["allow", "dismiss", "unlock"]) });
-  r.post("/requests", requireAuth, requirePerm("ip.manage"), express.json({ limit: "4kb" }), (req, res) => {
+  r.post("/requests", requireAuth, requirePerm("ip.manage"), express.json({ limit: "4kb" }), async (req, res) => {
     const p = requestSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: "IP ou ação inválida." });
     const ip = normalizeIp(p.data.ip);
     const { action } = p.data;
-    if (action === "unlock") clearIpLock(ip);
-    else if (action === "dismiss") store().prepare("UPDATE ip_requests SET status = 'dismissed' WHERE ip = ?").run(ip);
+    if (action === "unlock") await clearIpLock(ip);
+    else if (action === "dismiss") await run("UPDATE app.ip_requests SET status = 'dismissed' WHERE ip = ?", ip);
     else {
       const cidr = parseCidr(ip)!.cidr;
       if (!state.entries.some((e) => e.cidr === cidr)) {
         if (state.entries.length >= 500) return res.status(409).json({ error: "A lista atingiu o limite de 500 entradas." });
         const now = new Date().toISOString();
-        save({ ...state, entries: [...state.entries, { cidr, label: "Autorizado pelo painel", addedAt: now }], updatedAt: now, updatedBy: req.user!.username });
+        await save({ ...state, entries: [...state.entries, { cidr, label: "Autorizado pelo painel", addedAt: now }], updatedAt: now, updatedBy: req.user!.username });
       }
-      store().prepare("DELETE FROM ip_requests WHERE ip = ?").run(ip);
+      await run("DELETE FROM app.ip_requests WHERE ip = ?", ip);
     }
-    audit({ event: "ip_allowlist.update", actorId: req.user!.id, actor: req.user!.username, ip: clientIp(req), target: ip, details: { action } });
-    res.json(view(req));
+    await audit({ event: "ip_allowlist.update", actorId: req.user!.id, actor: req.user!.username, ip: clientIp(req), target: ip, details: { action } });
+    res.json(await view(req));
   });
   return r;
 }

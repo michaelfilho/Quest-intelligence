@@ -57,10 +57,10 @@ before(async()=>{
     INSERT INTO core.financial_entries(iclips_id,source_id,parent_entry_source_id,entry_type,amount) VALUES(199,'src199','órfão','A Pagar',900);
     CREATE TABLE core.financial_entry_cost_centers(financial_entry_id bigint,source_center_id bigint,name text,amount numeric,percentage numeric);
     INSERT INTO core.financial_entry_cost_centers VALUES (101,1,'Centro teste',60,60),(101,2,'Centro teste',40,40),(102,1,'Centro teste',200,90);
-    CREATE SCHEMA audit;CREATE TABLE audit.qpf11_publication_state(resource text,source_id text,published_at timestamptz);
-    INSERT INTO audit.qpf11_publication_state VALUES('FIN_ENTRIES_ENTRY','100','2026-01-10'),('PROJECTS','1','2026-01-11');
-    CREATE TABLE audit.qpf11_publication_conflicts(resource text,source_id text,reason text,resolved_at timestamptz);
-    INSERT INTO audit.qpf11_publication_conflicts VALUES('FIN_ENTRIES_ENTRY','199','Razão sintética',NULL),('PROJECTS','2','Razão sintética','2026-01-20');`);
+    CREATE SCHEMA audit;CREATE TABLE audit.publication_state(resource text,source_id text,published_at timestamptz);
+    INSERT INTO audit.publication_state VALUES('FIN_ENTRIES_ENTRY','100','2026-01-10'),('PROJECTS','1','2026-01-11');
+    CREATE TABLE audit.publication_conflicts(resource text,source_id text,reason text,resolved_at timestamptz);
+    INSERT INTO audit.publication_conflicts VALUES('FIN_ENTRIES_ENTRY','199','Razão sintética',NULL),('PROJECTS','2','Razão sintética','2026-01-20');`);
   await pg.query('UPDATE core.clients SET document=$1 WHERE iclips_id=10',[docA]);
   await pg.query('UPDATE core.clients SET document=$1 WHERE iclips_id IN (20,30)',[docB]);
   await pg.query('UPDATE core.invoices SET client_document=$1 WHERE iclips_id IN (1,2)',[docA]);

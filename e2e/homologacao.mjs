@@ -150,10 +150,16 @@ await check("escopo 1.0: sem IA, voz ou reunião no menu nem nas rotas", async (
     await p.getByText("Página não encontrada").first().waitFor();
   }
 });
-await check("sem banco: estado gerencial curto e nenhum valor inventado", async () => {
+await check("instalação limpa: nenhum valor monetário e nenhuma falha de consulta", async () => {
+  for (const path of ["/", "/financeiro", "/clientes", "/projetos", "/rentabilidade"]) {
+    await p.goto(BASE + path);
+    await settle(p);
+    if (await p.locator("text=/R\$\s?[1-9]/").count()) throw new Error("valor inventado em " + path);
+    for (const bad of ["Falha na consulta", "Integração indisponível", "Dados em revisão", "Erro inesperado"]) if (await p.getByText(bad, { exact: true }).count()) throw new Error(bad + " em " + path);
+  }
   await p.goto(BASE + "/financeiro");
-  await p.getByText('Integração pendente').first().waitFor();
-  if (await p.locator("text=/R\\$\\s?\\d/").count()) throw new Error("valor monetário exibido sem banco");
+  await p.getByText("Sem registros").first().waitFor();
+  await shot(p, "vazio-financeiro");
 });
 await check("rastreabilidade: gaveta do indicador abre e fecha", async () => {
   await p.getByTitle("Ver origem, fórmula e registros").first().click();
@@ -163,17 +169,16 @@ await check("rastreabilidade: gaveta do indicador abre e fecha", async () => {
   await p.keyboard.press("Escape");
   await p.getByText('Sobre o indicador').waitFor({state:'detached'});
 });
-await check("tabela sem banco: indisponibilidade clara sem simular linhas", async () => {
+await check("tabela vazia: estado vazio claro sem simular linhas", async () => {
   await p.goto(BASE + "/clientes");
   await settle(p);
-  const th = p.getByRole('heading',{name:'Clientes',level:3,exact:true});
-  // Tabelas abaixo da dobra agora são consultadas apenas quando entram no viewport.
-  for(let i=0;i<5&&!await th.count();i++){
-    await p.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
+  const th = p.getByRole("heading", { name: "Clientes", level: 3, exact: true });
+  for (let i = 0; i < 5 && !await th.count(); i++) {
+    await p.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await p.waitForTimeout(250);
   }
   await th.waitFor();
-  await p.getByText('Integração indisponível').first().waitFor();
+  await p.getByText("Sem registros para os filtros aplicados").first().waitFor();
 });
 await check("filtros globais: período e comparação persistem na URL entre módulos", async () => {
   await p.goto(BASE + "/");
@@ -197,12 +202,18 @@ await check("telas do design: reais abrem e sem fonte informam indisponibilidade
     if (await p.getByText("Página não encontrada").count()) throw new Error("rota ausente: " + path);
     if (await p.locator("text=/R\\$\\s?\\d/").count()) throw new Error("valor monetário sem banco: " + path);
   }
-  for (const path of ["/marcas", "/fees-jobs-extras", "/diagnosticos", "/assistente-ia", "/metas-parametros"]) {
+  for (const path of ["/diagnosticos", "/assistente-ia"]) {
     await p.goto(BASE + path);
-    await p.getByText("Informação indisponível").waitFor();
+    await p.getByText("Aguardando integração").first().waitFor();
   }
-  await p.goto(BASE + "/marcas");
+  await p.goto(BASE + "/diagnosticos");
   await shot(p, "indisponivel");
+  for (const path of ["/marcas", "/fees-jobs-extras", "/metas-parametros"]) {
+    await p.goto(BASE + path);
+    await p.locator("main h1").waitFor();
+    await p.getByText("Sem registros para os filtros aplicados").first().waitFor();
+  }
+  await shot(p, "estrutura-vazia");
 });
 
 await check("Relatórios: pré-visualização honesta e exportação XLSX/CSV/MD", async () => {

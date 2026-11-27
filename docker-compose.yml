@@ -1,6 +1,7 @@
 # LOCAL: API + web com a mesma cadeia de proxy da produção, sem banco (DATABASE_UNAVAILABLE) ou via túnel no .env.
 #   docker compose up --build   →  http://localhost:8080
 #   1º acesso: docker compose exec api npm run user:admin -- <usuario>
+# Exige um PostgreSQL preparado (server/db/bootstrap.sql + npm run db:migrate) e as URLs no .env.
 services:
   api:
     build: { context: ., dockerfile: server/Dockerfile }
@@ -10,8 +11,6 @@ services:
       TRUST_PROXY: 172.30.58.2
       REQUIRE_PROXY: "true"
       COOKIE_SECURE: "false" # http://localhost sem TLS; produção usa true
-    volumes:
-      - ./server/data:/app/server/data
     restart: unless-stopped
 
   web:

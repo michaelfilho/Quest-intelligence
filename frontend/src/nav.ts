@@ -28,6 +28,9 @@ const preset = (id: string, label: string, indicators: string[] = [], charts: st
 const page = (path: string, moduleId: string, view: ManagementView, compare?: boolean): SectionPage => ({ path, moduleId, preset: view, compare });
 
 export const SECTION_PAGES: SectionPage[] = [
+  page('/marcas', 'clientes', preset('marcas', 'Marcas', ['marcas_cadastradas', 'clientes_cadastrados'], [], ['marcas'], 'A listagem aguarda a integração do cadastro de marcas.')),
+  page('/fees-jobs-extras', 'contratos', preset('fees', 'Fees e Jobs Extras', ['fees_cadastrados', 'contratos_cadastrados'], [], ['fees_jobs_extras'], 'Aguarda a integração e a classificação aprovada de fee e job extra.')),
+  page('/metas-parametros', 'executivo', preset('metas', 'Metas e Parâmetros', ['metas_cadastradas'], [], ['metas'], 'Nenhuma meta é presumida: só aparecem metas cadastradas e aprovadas.')),
   page('/indicadores-estrategicos', 'executivo', preset('estrategicos', 'Indicadores Estratégicos',
     ['receita_faturada', 'receita_recebida', 'resultado_operacional', 'margem_operacional', 'projetos_ativos', 'projetos_atrasados', 'horas_registradas', 'clientes_ativos'],
     ['evolucao_resultado', 'receitas_vs_despesas'])),
@@ -59,19 +62,24 @@ export const SECTION_PAGES: SectionPage[] = [
     ['receita_faturada', 'receita_recebida', 'despesas', 'resultado_operacional', 'horas_registradas', 'projetos_ativos'], ['receitas_vs_despesas'], [],
     'Cada indicador é comparado com o período imediatamente anterior, de mesma duração.'), true),
   page('/regras-rateio', 'financeiro', preset('rateio', 'Regras de Rateio',
-    ['despesas_rateadas', 'despesas_sem_rateio', 'despesas_rateio_divergente'], ['despesas_por_centro_custo'], ['rateios_financeiros'],
+    ['regras_rateio_cadastradas', 'despesas_rateadas', 'despesas_sem_rateio', 'despesas_rateio_divergente'], ['despesas_por_centro_custo'], ['regras_rateio', 'rateios_financeiros'],
     'Consulta dos rateios registrados na origem. A aplicação não cria nem altera regras de rateio.')),
   page('/plano-contas', 'financeiro', preset('plano', 'Plano de Contas', [], [], ['dre_categorias', 'dre_contas'],
     'Categorias e contas com movimentação no período, conforme a origem. Somente consulta.')),
 ];
 
-/** Telas do design sem fonte confiável no banco: mostram a indisponibilidade, sem nenhum número. */
-export const UNAVAILABLE_PAGES: { path: string; label: string; permission: Permission; reason: string }[] = [
-  { path: '/marcas', label: 'Marcas', permission: 'clientes.view', reason: 'A integração não possui cadastro de marcas. Grupos empresariais não são marcas e não são usados como substituto.' },
-  { path: '/fees-jobs-extras', label: 'Fees e Jobs Extras', permission: 'contratos.view', reason: 'Não há fonte de contratos de fee nem classificação de jobs extras na integração.' },
-  { path: '/diagnosticos', label: 'Diagnósticos', permission: 'estrategicos.view', reason: 'Os critérios de diagnóstico gerencial ainda não foram definidos e aprovados. Consulte a Central de Alertas.' },
-  { path: '/assistente-ia', label: 'Assistente de IA', permission: 'estrategicos.view', reason: 'Nenhum serviço de inteligência artificial está integrado a esta versão.' },
-  { path: '/metas-parametros', label: 'Metas e Parâmetros', permission: 'config.view', reason: 'Não há cadastro de metas aprovado. Os parâmetros do sistema estão em Configurações.' },
+/** Telas do design que dependem de critérios ou serviços ainda não definidos: mostram a estrutura, sem números. */
+export const UNAVAILABLE_PAGES: { path: string; label: string; permission: Permission; reason: string; cards: { title: string; text: string }[] }[] = [
+  { path: '/diagnosticos', label: 'Diagnósticos', permission: 'estrategicos.view', reason: 'Os critérios de diagnóstico gerencial ainda não foram definidos e aprovados. Consulte a Central de Alertas.', cards: [
+    { title: 'Distribuição de capacidade', text: 'Aguarda fonte de jornada dos colaboradores.' },
+    { title: 'Proteção da margem', text: 'Aguarda metodologia de custos aprovada.' },
+    { title: 'Refações e alterações', text: 'Aguarda dados e critério de análise.' },
+    { title: 'Recebimento do faturado', text: 'Aguarda dados e critério de atraso.' },
+  ] },
+  { path: '/assistente-ia', label: 'Assistente de IA', permission: 'estrategicos.view', reason: 'Nenhum serviço de inteligência artificial está integrado nesta etapa.', cards: [
+    { title: 'Perguntas sobre os indicadores', text: 'Disponível após a integração específica.' },
+    { title: 'Explicação de variações', text: 'Disponível após a integração específica.' },
+  ] },
 ];
 
 const NO_QUESTION = '';
@@ -96,8 +104,8 @@ export const NAV: NavItem[] = [
   moduleItem('executivo', G1, 'Visão Geral'), sectionItem('/indicadores-estrategicos', G1, Target), sectionItem('/rentabilidade-consolidada', G1, TrendingUp),
   item('alertas', '/alertas', 'Alertas Gerenciais', G1, Activity, ALERTS),
 
-  moduleItem('clientes', G2), unavailableItem('/marcas', G2, Tags), moduleItem('contratos', G2, 'Contratos'), sectionItem('/categorias-servicos', G2, Layers),
-  unavailableItem('/fees-jobs-extras', G2, Wallet), sectionItem('/rentabilidade-comercial', G2, TrendingUp), sectionItem('/integracoes', G2, Link2),
+  moduleItem('clientes', G2), sectionItem('/marcas', G2, Tags), moduleItem('contratos', G2, 'Contratos'), sectionItem('/categorias-servicos', G2, Layers),
+  sectionItem('/fees-jobs-extras', G2, Wallet), sectionItem('/rentabilidade-comercial', G2, TrendingUp), sectionItem('/integracoes', G2, Link2),
 
   moduleItem('projetos', G3, 'Projetos / Jobs'), moduleItem('producao', G3), moduleItem('timesheet', G3), moduleItem('departamentos', G3), moduleItem('colaboradores', G3),
   moduleItem('produtividade', G3, 'Produtividade'), sectionItem('/pecas-atividades', G3, ListChecks), sectionItem('/capacidade-operacional', G3, Activity), sectionItem('/refacoes-alteracoes', G3, FileText),
@@ -111,7 +119,7 @@ export const NAV: NavItem[] = [
 
   item('configuracoes', '/configuracoes', 'Configurações', G6, Settings, ['config.view', 'usuarios.manage', 'perfis.manage', 'ip.manage', 'sessoes.manage', 'auditoria.view']),
   item('controle-acesso', '/controle-acesso', 'Controle de Acesso', G6, Lock, ['ip.manage']),
-  sectionItem('/regras-rateio', G6, Layers), sectionItem('/plano-contas', G6, FileText), unavailableItem('/metas-parametros', G6, Target),
+  sectionItem('/regras-rateio', G6, Layers), sectionItem('/plano-contas', G6, FileText), sectionItem('/metas-parametros', G6, Target),
   item('permissoes', '/permissoes', 'Permissões', G6, Shield, ['perfis.manage']), item('auditoria', '/auditoria', 'Auditoria', G6, Shield, ['auditoria.view']),
 ];
 

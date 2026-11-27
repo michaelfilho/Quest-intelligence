@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
-# Backup do QUEST RINNE na VPS (dados da APLICAÇÃO: usuários, perfis, sessões, auditoria, conversas, reuniões,
-# configurações e allowlist de IPs). O banco analítico PostgreSQL NÃO é tocado aqui.
-# Uso (na pasta do projeto, na VPS):  bash deploy/backup.sh [/caminho/destino]
-# Requer a API em execução (cópia consistente a quente via SQLite "VACUUM INTO").
+# Backup do banco quest_rinne (aplicação e dados empresariais) na VPS. Não interrompe o serviço.
+# Uso:  bash deploy/backup.sh [/caminho/destino]
 set -euo pipefail
-DEST="${1:-./backups}"
-STAMP="$(date +%Y%m%d-%H%M%S)"
-COMPOSE="docker compose -f docker-compose.prod.yml --env-file deploy/.env.production"
+umask 077
+DEST="${1:-/opt/backups/quest-rinne}"
+DB="${QUEST_DB_CONTAINER:-quest-rinne-db-1}"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$DEST"
-
-# 1) Cópia consistente do SQLite dentro do container (não interrompe o serviço).
-$COMPOSE exec -T api node -e "
-  const { DatabaseSync } = require('node:sqlite');
-  const db = new DatabaseSync('/app/server/data/app.db');
-  db.exec(\"VACUUM INTO '/app/server/data/backup-$STAMP.db'\");
-  db.close();
-"
-# 2) Empacota a cópia + allowlist e remove a cópia temporária do volume.
-tar -C deploy/data -czf "$DEST/rinne-app-$STAMP.tar.gz" "backup-$STAMP.db" $( [ -f deploy/data/ip-allowlist.json ] && echo ip-allowlist.json )
-rm -f "deploy/data/backup-$STAMP.db"
-chmod 600 "$DEST/rinne-app-$STAMP.tar.gz"
-echo "Backup: $DEST/rinne-app-$STAMP.tar.gz"
-# Retenção sugerida: manter 30 dias (ajuste conforme a política da Quest).
-find "$DEST" -name 'rinne-app-*.tar.gz' -mtime +30 -delete
+docker exec "$DB" sh -c 'exec pg_dump -U "${POSTGRES_USER:-postgres}" -d quest_rinne -Fc' > "$DEST/quest_rinne-$STAMP.dump.part"
+docker exec -i "$DB" pg_restore --list < "$DEST/quest_rinne-$STAMP.dump.part" > /dev/null
+mv "$DEST/quest_rinne-$STAMP.dump.part" "$DEST/quest_rinne-$STAMP.dump"
+echo "Backup: $DEST/quest_rinne-$STAMP.dump"
+# Retenção sugerida: 30 dias (ajuste conforme a política da Quest).
+find "$DEST" -maxdepth 1 -name 'quest_rinne-*.dump' -mtime +30 -delete

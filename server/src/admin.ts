@@ -5,7 +5,7 @@ import { ALL_PERMISSIONS, isPermission } from "../../shared/permissions.js";
 import { clientIp, requirePerm, revokeSessions } from "./auth.js";
 import { dbState, SCHEMAS } from "./db.js";
 import { hashPassword, temporaryPassword } from "./passwords.js";
-import { allSettings, audit, now, setSetting, store, type SettingKey } from "./store.js";
+import { all, allSettings, audit, get, now, run, setSetting, type SettingKey } from "./store.js";
 
 const perms = z.array(z.string().refine(isPermission, "permissão inexistente")).max(ALL_PERMISSIONS.length);
 const idText = z.string().trim().max(64);
@@ -31,7 +31,7 @@ const userPatch = z.object({
 });
 const roleBody = z.object({ name: z.string().trim().min(2).max(60), description: z.string().trim().max(200).default(""), permissions: perms });
 
-const parseList = (s: unknown) => JSON.parse(String(s ?? "[]")) as string[];
+const parseList = (s: unknown) => (typeof s === "string" ? JSON.parse(s) : (s ?? [])) as string[];
 const actor = (req: Request) => ({ actorId: req.user!.id, actor: req.user!.username, ip: clientIp(req) });
 function bad(res: Response, issues: z.ZodIssue[]) {
   return res.status(400).json({ error: "Dados inválidos", details: issues.map((i) => ({ campo: i.path.join("."), erro: i.message })) });
@@ -45,130 +45,131 @@ function userRow(u: Record<string, unknown>) {
     sessions: Number(u.sessions ?? 0),
   };
 }
-const USER_SELECT = `SELECT u.*, r.name role_name, (SELECT count(*) FROM sessions s WHERE s.user_id = u.id AND s.expires_at > ?) sessions FROM users u LEFT JOIN roles r ON r.id = u.role_id`;
+const USER_SELECT = `SELECT u.*, r.name role_name, (SELECT count(*) FROM app.sessions s WHERE s.user_id = u.id AND s.expires_at > ?) sessions FROM app.users u LEFT JOIN app.roles r ON r.id = u.role_id`;
 
 /** Quantos administradores ativos existiriam se `exceptId` deixasse de sê-lo. */
-const otherActiveAdmins = (exceptId: number) => Number(store().prepare("SELECT count(*) n FROM users WHERE role_id = 'admin' AND active = 1 AND id <> ?").get(exceptId)?.n ?? 0);
+const otherActiveAdmins = async (exceptId: number) => Number((await get("SELECT count(*) n FROM app.users WHERE role_id = 'admin' AND active AND id <> ?", exceptId))?.n ?? 0);
+/** Identificador numérico de usuário vindo da URL; valores inválidos nunca chegam ao banco. */
+const userId = (value: unknown) => (/^[1-9]\d{0,8}$/.test(String(value)) ? Number(value) : 0);
 
 export function adminRouter() {
   const r = express.Router();
   r.use(express.json({ limit: "32kb" }));
 
   // ---------------- Usuários ----------------
-  r.get("/users", requirePerm("usuarios.manage"), (_req, res) => {
-    res.json(store().prepare(`${USER_SELECT} ORDER BY u.name`).all(now()).map(userRow));
+  r.get("/users", requirePerm("usuarios.manage"), async (_req, res) => {
+    res.json((await all(`${USER_SELECT} ORDER BY u.name`, now())).map(userRow));
   });
 
   r.post("/users", requirePerm("usuarios.manage"), async (req, res) => {
     const p = userCreate.safeParse(req.body);
     if (!p.success) return bad(res, p.error.issues);
     const d = p.data;
-    if (d.roleId && !store().prepare("SELECT 1 FROM roles WHERE id = ?").get(d.roleId)) return res.status(400).json({ error: "Perfil inexistente" });
-    if (store().prepare("SELECT 1 FROM users WHERE username = ?").get(d.username)) return res.status(409).json({ error: "Nome de usuário já existe" });
+    if (d.roleId && !(await get("SELECT 1 FROM app.roles WHERE id = ?", d.roleId))) return res.status(400).json({ error: "Perfil inexistente" });
+    if (await get("SELECT 1 FROM app.users WHERE lower(username) = lower(?)", d.username)) return res.status(409).json({ error: "Nome de usuário já existe" });
     const temp = temporaryPassword();
     const t = now();
-    const info = store()
-      .prepare("INSERT INTO users (username, name, email, password_hash, role_id, grants, denies, scope_department, active, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)")
-      .run(d.username, d.name, d.email || null, await hashPassword(temp), d.roleId ?? null, JSON.stringify(d.grants), JSON.stringify(d.denies), d.scopeDepartment ?? null, d.active ? 1 : 0, t, t);
-    audit({ event: "user.create", ...actor(req), target: d.username, details: { roleId: d.roleId ?? null, grants: d.grants, denies: d.denies, scopeDepartment: d.scopeDepartment ?? null, active: d.active } });
+    const info = await get("INSERT INTO app.users (username, name, email, password_hash, role_id, grants, denies, scope_department, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+      d.username, d.name, d.email || null, await hashPassword(temp), d.roleId ?? null, JSON.stringify(d.grants), JSON.stringify(d.denies), d.scopeDepartment ?? null, d.active, t, t);
+    await audit({ event: "user.create", ...actor(req), target: d.username, details: { roleId: d.roleId ?? null, grants: d.grants, denies: d.denies, scopeDepartment: d.scopeDepartment ?? null, active: d.active } });
     // A senha temporária só é exibida nesta resposta (troca obrigatória no primeiro acesso).
-    res.status(201).json({ id: Number(info.lastInsertRowid), temporaryPassword: temp });
+    res.status(201).json({ id: Number(info!.id), temporaryPassword: temp });
   });
 
-  r.patch("/users/:id", requirePerm("usuarios.manage"), (req, res) => {
-    const id = Number(req.params.id);
-    const cur = store().prepare("SELECT * FROM users WHERE id = ?").get(id);
+  r.patch("/users/:id", requirePerm("usuarios.manage"), async (req, res) => {
+    const id = userId(req.params.id);
+    const cur = await get("SELECT * FROM app.users WHERE id = ?", id);
     if (!cur) return res.status(404).json({ error: "Usuário inexistente" });
     const p = userPatch.safeParse(req.body);
     if (!p.success) return bad(res, p.error.issues);
     const d = p.data;
-    if (d.roleId && !store().prepare("SELECT 1 FROM roles WHERE id = ?").get(d.roleId)) return res.status(400).json({ error: "Perfil inexistente" });
+    if (d.roleId && !(await get("SELECT 1 FROM app.roles WHERE id = ?", d.roleId))) return res.status(400).json({ error: "Perfil inexistente" });
     const losingAdmin = cur.role_id === "admin" && cur.active && ((d.roleId !== undefined && d.roleId !== "admin") || d.active === false || d.denies?.length);
-    if (losingAdmin && otherActiveAdmins(id) === 0) return res.status(409).json({ error: "Este é o último administrador ativo: não é possível remover seu acesso." });
+    if (losingAdmin && (await otherActiveAdmins(id)) === 0) return res.status(409).json({ error: "Este é o último administrador ativo: não é possível remover seu acesso." });
     if (id === req.user!.id && d.active === false) return res.status(409).json({ error: "Você não pode desativar a si mesmo." });
 
     const next = {
       name: d.name ?? cur.name, email: d.email === undefined ? cur.email : d.email || null, role_id: d.roleId === undefined ? cur.role_id : d.roleId,
-      grants: d.grants ? JSON.stringify(d.grants) : cur.grants, denies: d.denies ? JSON.stringify(d.denies) : cur.denies,
-      scope_department: d.scopeDepartment === undefined ? cur.scope_department : d.scopeDepartment, active: d.active === undefined ? cur.active : d.active ? 1 : 0,
+      grants: JSON.stringify(d.grants ?? parseList(cur.grants)), denies: JSON.stringify(d.denies ?? parseList(cur.denies)),
+      scope_department: d.scopeDepartment === undefined ? cur.scope_department : d.scopeDepartment, active: d.active === undefined ? !!cur.active : d.active,
     };
-    store().prepare("UPDATE users SET name = ?, email = ?, role_id = ?, grants = ?, denies = ?, scope_department = ?, active = ?, updated_at = ? WHERE id = ?").run(next.name, next.email, next.role_id, next.grants, next.denies, next.scope_department, next.active, now(), id);
-    const revoked = next.active ? 0 : revokeSessions({ userId: id });
+    await run("UPDATE app.users SET name = ?, email = ?, role_id = ?, grants = ?, denies = ?, scope_department = ?, active = ?, updated_at = ? WHERE id = ?", next.name, next.email, next.role_id, next.grants, next.denies, next.scope_department, next.active, now(), id);
+    const revoked = next.active ? 0 : await revokeSessions({ userId: id });
     const permsChanged = d.roleId !== undefined || d.grants !== undefined || d.denies !== undefined;
-    audit({ event: permsChanged ? "user.permissions_update" : "user.update", ...actor(req), target: String(cur.username), details: { changes: d, sessionsRevoked: revoked } });
+    await audit({ event: permsChanged ? "user.permissions_update" : "user.update", ...actor(req), target: String(cur.username), details: { changes: d, sessionsRevoked: revoked } });
     res.status(204).end();
   });
 
   r.post("/users/:id/reset-password", requirePerm("usuarios.manage"), async (req, res) => {
-    const id = Number(req.params.id);
-    const u = store().prepare("SELECT username FROM users WHERE id = ?").get(id);
+    const id = userId(req.params.id);
+    const u = await get("SELECT username FROM app.users WHERE id = ?", id);
     if (!u) return res.status(404).json({ error: "Usuário inexistente" });
     const temp = temporaryPassword();
-    store().prepare("UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?").run(await hashPassword(temp), now(), id);
-    const revoked = revokeSessions({ userId: id });
-    audit({ event: "user.password_reset", ...actor(req), target: String(u.username), details: { sessionsRevoked: revoked } });
+    await run("UPDATE app.users SET password_hash = ?, must_change_password = true, updated_at = ? WHERE id = ?", await hashPassword(temp), now(), id);
+    const revoked = await revokeSessions({ userId: id });
+    await audit({ event: "user.password_reset", ...actor(req), target: String(u.username), details: { sessionsRevoked: revoked } });
     res.json({ temporaryPassword: temp });
   });
 
   // ---------------- Perfis ----------------
-  r.get("/roles", requirePerm("perfis.manage"), (_req, res) => {
-    res.json(store().prepare("SELECT r.*, (SELECT count(*) FROM users u WHERE u.role_id = r.id) users FROM roles r ORDER BY system DESC, name").all().map((x) => ({ id: x.id, name: x.name, description: x.description, permissions: parseList(x.permissions), system: !!x.system, locked: x.id === "admin", users: Number(x.users) })));
+  r.get("/roles", requirePerm("perfis.manage"), async (_req, res) => {
+    res.json((await all("SELECT r.*, (SELECT count(*) FROM app.users u WHERE u.role_id = r.id) users FROM app.roles r ORDER BY system DESC, name")).map((x) => ({ id: x.id, name: x.name, description: x.description, permissions: parseList(x.permissions), system: !!x.system, locked: x.id === "admin", users: Number(x.users) })));
   });
   // Lista mínima para o formulário de usuários.
-  r.get("/roles/options", requirePerm("usuarios.manage"), (_req, res) => res.json(store().prepare("SELECT id, name FROM roles ORDER BY name").all()));
+  r.get("/roles/options", requirePerm("usuarios.manage"), async (_req, res) => res.json(await all("SELECT id, name FROM app.roles ORDER BY name")));
 
-  r.post("/roles", requirePerm("perfis.manage"), (req, res) => {
+  r.post("/roles", requirePerm("perfis.manage"), async (req, res) => {
     const p = roleBody.safeParse(req.body);
     if (!p.success) return bad(res, p.error.issues);
     const id = p.data.name.toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || "perfil";
-    if (store().prepare("SELECT 1 FROM roles WHERE id = ? OR name = ?").get(id, p.data.name)) return res.status(409).json({ error: "Já existe um perfil com esse nome" });
-    store().prepare("INSERT INTO roles (id, name, description, permissions, system, updated_at) VALUES (?, ?, ?, ?, 0, ?)").run(id, p.data.name, p.data.description, JSON.stringify(p.data.permissions), now());
-    audit({ event: "role.create", ...actor(req), target: id, details: { permissions: p.data.permissions } });
+    if (await get("SELECT 1 FROM app.roles WHERE id = ? OR name = ?", id, p.data.name)) return res.status(409).json({ error: "Já existe um perfil com esse nome" });
+    await run("INSERT INTO app.roles (id, name, description, permissions) VALUES (?, ?, ?, ?)", id, p.data.name, p.data.description, JSON.stringify(p.data.permissions));
+    await audit({ event: "role.create", ...actor(req), target: id, details: { permissions: p.data.permissions } });
     res.status(201).json({ id });
   });
 
-  r.put("/roles/:id", requirePerm("perfis.manage"), (req, res) => {
+  r.put("/roles/:id", requirePerm("perfis.manage"), async (req, res) => {
     const id = String(req.params.id);
     if (id === "admin") return res.status(409).json({ error: "O perfil Administrador sempre tem todas as permissões e não pode ser alterado." });
-    const cur = store().prepare("SELECT * FROM roles WHERE id = ?").get(id);
+    const cur = await get("SELECT * FROM app.roles WHERE id = ?", id);
     if (!cur) return res.status(404).json({ error: "Perfil inexistente" });
     const p = roleBody.safeParse(req.body);
     if (!p.success) return bad(res, p.error.issues);
-    store().prepare("UPDATE roles SET name = ?, description = ?, permissions = ?, updated_at = ? WHERE id = ?").run(p.data.name, p.data.description, JSON.stringify(p.data.permissions), now(), id);
+    await run("UPDATE app.roles SET name = ?, description = ?, permissions = ?, updated_at = ? WHERE id = ?", p.data.name, p.data.description, JSON.stringify(p.data.permissions), now(), id);
     const before = new Set(parseList(cur.permissions));
     const after = new Set<string>(p.data.permissions);
-    audit({ event: "role.permissions_update", ...actor(req), target: id, details: { added: [...after].filter((x) => !before.has(x)), removed: [...before].filter((x) => !after.has(x)) } });
+    await audit({ event: "role.permissions_update", ...actor(req), target: id, details: { added: [...after].filter((x) => !before.has(x)), removed: [...before].filter((x) => !after.has(x)) } });
     res.status(204).end();
   });
 
-  r.delete("/roles/:id", requirePerm("perfis.manage"), (req, res) => {
+  r.delete("/roles/:id", requirePerm("perfis.manage"), async (req, res) => {
     const id = String(req.params.id);
-    const cur = store().prepare("SELECT system FROM roles WHERE id = ?").get(id);
+    const cur = await get("SELECT system FROM app.roles WHERE id = ?", id);
     if (!cur) return res.status(404).json({ error: "Perfil inexistente" });
     if (cur.system) return res.status(409).json({ error: "Perfis padrão não podem ser excluídos." });
-    const affected = store().prepare("UPDATE users SET role_id = NULL WHERE role_id = ?").run(id).changes; // ficam sem permissão (bloqueio por padrão)
-    store().prepare("DELETE FROM roles WHERE id = ?").run(id);
-    audit({ event: "role.delete", ...actor(req), target: id, details: { usersWithoutRole: affected } });
+    const affected = await run("UPDATE app.users SET role_id = NULL WHERE role_id = ?", id); // ficam sem permissão (bloqueio por padrão)
+    await run("DELETE FROM app.roles WHERE id = ?", id);
+    await audit({ event: "role.delete", ...actor(req), target: id, details: { usersWithoutRole: affected } });
     res.status(204).end();
   });
 
   // ---------------- Sessões (todos os usuários) ----------------
-  r.get("/sessions", requirePerm("sessoes.manage"), (req, res) => {
-    const rows = store().prepare("SELECT s.id, s.created_at, s.last_seen_at, s.expires_at, s.ip, s.user_agent, u.username, u.name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.expires_at > ? ORDER BY s.last_seen_at DESC").all(now());
+  r.get("/sessions", requirePerm("sessoes.manage"), async (req, res) => {
+    const rows = await all("SELECT s.id, s.created_at, s.last_seen_at, s.expires_at, s.ip, s.user_agent, u.username, u.name FROM app.sessions s JOIN app.users u ON u.id = s.user_id WHERE s.expires_at > ? ORDER BY s.last_seen_at DESC", now());
     res.json(rows.map((s) => ({ ...s, current: s.id === req.user!.sessionId })));
   });
-  r.delete("/sessions/:id", requirePerm("sessoes.manage"), (req, res) => {
-    const s = store().prepare("SELECT u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?").get(String(req.params.id));
+  r.delete("/sessions/:id", requirePerm("sessoes.manage"), async (req, res) => {
+    const s = await get("SELECT u.username FROM app.sessions s JOIN app.users u ON u.id = s.user_id WHERE s.id = ?", String(req.params.id));
     if (!s) return res.status(404).json({ error: "Sessão inexistente" });
-    revokeSessions({ id: String(req.params.id) });
-    audit({ event: "session.revoke", ...actor(req), target: String(s.username) });
+    await revokeSessions({ id: String(req.params.id) });
+    await audit({ event: "session.revoke", ...actor(req), target: String(s.username) });
     res.status(204).end();
   });
-  r.delete("/users/:id/sessions", requirePerm("sessoes.manage"), (req, res) => {
-    const u = store().prepare("SELECT username FROM users WHERE id = ?").get(Number(req.params.id));
+  r.delete("/users/:id/sessions", requirePerm("sessoes.manage"), async (req, res) => {
+    const u = await get("SELECT username FROM app.users WHERE id = ?", userId(req.params.id));
     if (!u) return res.status(404).json({ error: "Usuário inexistente" });
-    const n = revokeSessions({ userId: Number(req.params.id) });
-    audit({ event: "session.revoke_all", ...actor(req), target: String(u.username), details: { sessionsRevoked: n } });
+    const n = await revokeSessions({ userId: userId(req.params.id) });
+    await audit({ event: "session.revoke_all", ...actor(req), target: String(u.username), details: { sessionsRevoked: n } });
     res.json({ revoked: n });
   });
 
@@ -180,7 +181,7 @@ export function adminRouter() {
     outcome: z.enum(["success", "failure", "denied"]).optional(),
     actor: z.string().max(64).optional(),
   });
-  r.get("/audit", requirePerm("auditoria.view"), (req, res) => {
+  r.get("/audit", requirePerm("auditoria.view"), async (req, res) => {
     const p = auditQuery.safeParse(req.query);
     if (!p.success) return bad(res, p.error.issues);
     const { page, pageSize, event, outcome, actor: who } = p.data;
@@ -190,9 +191,9 @@ export function adminRouter() {
     if (outcome) (where.push("outcome = ?"), args.push(outcome));
     if (who) (where.push("actor = ?"), args.push(who));
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
-    const total = Number(store().prepare(`SELECT count(*) n FROM audit_log ${w}`).get(...args)?.n ?? 0);
-    const rows = store().prepare(`SELECT * FROM audit_log ${w} ORDER BY id DESC LIMIT ? OFFSET ?`).all(...args, pageSize, (page - 1) * pageSize);
-    res.json({ total, page, pageSize, rows: rows.map((x) => ({ ...x, details: JSON.parse(String(x.details)) })) });
+    const total = Number((await get(`SELECT count(*) n FROM app.audit_log ${w}`, ...args))?.n ?? 0);
+    const rows = await all(`SELECT * FROM app.audit_log ${w} ORDER BY id DESC LIMIT ? OFFSET ?`, ...args, pageSize, (page - 1) * pageSize);
+    res.json({ total, page, pageSize, rows: rows.map((x) => ({ ...x, id: Number(x.id) })) });
   });
 
   // ---------------- Configurações ----------------
@@ -211,7 +212,7 @@ export function adminRouter() {
 
   r.get("/settings", requirePerm("config.view"), async (_req, res) => {
     res.json({
-      settings: allSettings(),
+      settings: await allSettings(),
       environment: {
         database: (await dbState()).state,
         schemas: SCHEMAS,
@@ -219,17 +220,17 @@ export function adminRouter() {
         requireProxy: process.env.REQUIRE_PROXY === "true",
         cookieSecure: process.env.COOKIE_SECURE !== "false",
         node: process.version,
-        dataDir: "server/data (volume persistente)",
+        persistence: "PostgreSQL (schema app)",
       },
     });
   });
 
-  r.put("/settings", requirePerm("config.manage"), (req, res) => {
+  r.put("/settings", requirePerm("config.manage"), async (req, res) => {
     const p = settingsSchema.safeParse(req.body);
     if (!p.success) return bad(res, p.error.issues);
-    for (const [k, v] of Object.entries(p.data)) setSetting(k as SettingKey, v, req.user!.username);
-    audit({ event: "settings.update", ...actor(req), details: { changed: p.data } });
-    res.json(allSettings());
+    for (const [k, v] of Object.entries(p.data)) await setSetting(k as SettingKey, v, req.user!.username);
+    await audit({ event: "settings.update", ...actor(req), details: { changed: p.data } });
+    res.json(await allSettings());
   });
 
   return r;

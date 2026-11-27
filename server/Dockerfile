@@ -10,9 +10,8 @@ RUN cd server && npm ci --omit=dev && npm cache clean --force
 COPY shared shared
 COPY server/src server/src
 COPY server/tsconfig.json server/
-COPY server/migrations server/migrations
-# Allowlist de IPs (único arquivo gravável). Em produção é um volume.
-RUN mkdir -p /app/server/data && chown node:node /app/server/data
+# Migrations do PostgreSQL (executadas por deploy/install.sh e update.sh com a role qi_migrator).
+COPY server/db server/db
 USER node
 WORKDIR /app/server
 EXPOSE 3333

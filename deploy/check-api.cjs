@@ -6,6 +6,7 @@ async function check(fetcher=fetch) {
   const data=await health.json();
   if (data.status!=='ok') throw new Error('Health interno inválido');
   if (data.database!=='CONNECTED') throw new Error('PostgreSQL indisponível');
+  if (data.application!=='CONNECTED') throw new Error('Banco da aplicação indisponível');
   const session=await fetcher(`${base}/api/auth/me`);
   if (session.status!==401) throw new Error('Proteção de sessão inesperada');
   const data_=await fetcher(`${base}/api/modules`);

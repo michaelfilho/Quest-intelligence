@@ -16,8 +16,8 @@ before(async () => {
     INSERT INTO core.job_tasks VALUES (1,1),(2,1);
     CREATE TABLE core.financial_entries (entry_date date, payment_date date, job_id bigint);
     INSERT INTO core.financial_entries VALUES ('2099-01-01','2026-01-01',1);
-    CREATE SCHEMA ingest; CREATE TABLE ingest.qpf11_tasks (id bigint, status text, updated_at timestamptz);
-    INSERT INTO ingest.qpf11_tasks VALUES (1,'RECEIVED','2026-01-02'), (2,'RECONCILE_REQUIRED','2026-01-03');`);
+    CREATE SCHEMA ingest; CREATE TABLE ingest.tasks (id bigint, status text, updated_at timestamptz);
+    INSERT INTO ingest.tasks VALUES (1,'RECEIVED','2026-01-02'), (2,'RECONCILE_REQUIRED','2026-01-03');`);
   schema = await discoverSchema(read);
 });
 after(async () => pg.close());

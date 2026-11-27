@@ -5,27 +5,14 @@ import { existsSync, mkdtempSync, rmSync,writeFileSync,readFileSync } from "node
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 const { renderRelease, verifyRunning } = createRequire(import.meta.url)("../../deploy/render-release.cjs");
 const {check}=createRequire(import.meta.url)('../../deploy/check-api.cjs');
 test('verificação interna exige PostgreSQL disponível e sessão protegida sem headers de proxy',async()=>{
-  const ok=async(url:string,options:unknown)=>{assert.equal(options,undefined);assert.ok(url.startsWith('http://127.0.0.1:'));return url.endsWith('/health')?new Response(JSON.stringify({status:'ok',database:'CONNECTED'})):new Response('',{status:401});};
+  const ok=async(url:string,options:unknown)=>{assert.equal(options,undefined);assert.ok(url.startsWith('http://127.0.0.1:'));return url.endsWith('/health')?new Response(JSON.stringify({status:'ok',database:'CONNECTED',application:'CONNECTED'})):new Response('',{status:401});};
   await check(ok);
   await assert.rejects(()=>check(async()=>new Response('',{status:403})));
   await assert.rejects(()=>check(async()=>new Response(JSON.stringify({status:'ok',database:'DATABASE_UNAVAILABLE'}))));
-  await assert.rejects(()=>check(async(url:string)=>url.endsWith('/health')?new Response(JSON.stringify({status:'ok',database:'CONNECTED'})):new Response('{}')));
-});
-test('stream binário preserva o SQLite consistente e o script não usa docker cp',()=>{
-  const dir=mkdtempSync(join(tmpdir(),'rinne-stream-test-'));
-  try {
-    const source=join(dir,'source.db'),target=join(dir,'target.db');
-    const db=new DatabaseSync(source);db.exec("CREATE TABLE sample(name TEXT); INSERT INTO sample VALUES('Criação')");db.close();
-    const stream=spawnSync(process.execPath,['-e','require("node:fs").createReadStream(process.argv[1]).pipe(process.stdout)',source],{encoding:null});
-    assert.equal(stream.status,0);writeFileSync(target,stream.stdout);assert.deepEqual(readFileSync(source),readFileSync(target));
-    const copy=new DatabaseSync(target,{readOnly:true});assert.equal(copy.prepare('PRAGMA integrity_check').get()?.integrity_check,'ok');assert.equal(copy.prepare('SELECT name FROM sample').get()?.name,'Criação');copy.close();
-    const script=readFileSync(new URL('../../deploy/prepare-release.sh',import.meta.url),'utf8');
-    assert.ok(!/docker cp\s/.test(script));assert.ok(script.includes('sha256sum --check --status'));assert.ok(script.includes('check-api.cjs'));
-  } finally {rmSync(dir,{recursive:true,force:true});}
+  await assert.rejects(()=>check(async(url:string)=>url.endsWith('/health')?new Response(JSON.stringify({status:'ok',database:'CONNECTED',application:'CONNECTED'})):new Response('{}')));
 });
 const config = () => ({ services: {
   api: { environment: { DATABASE_URL:'fixture-readonly', TRUST_PROXY:'172.1.2.3' }, volumes:[{ type:'bind',source:'/opt/private/data',target:'/app/server/data' }], networks:['postgres'] },
@@ -56,13 +43,6 @@ test("preparo recusa ambiente efetivo diferente sem imprimir segredo", () => {
   containers[0].Config.Env=['DATABASE_URL=divergente'];
   assert.throws(()=>verifyRunning(c,containers),e=>e instanceof Error&&e.message.includes('DATABASE_URL')&&!e.message.includes('fixture-readonly'));
 });
-test("backup SQLite consistente funciona em conexão de leitura e verifica integridade", () => {
-  const dir=mkdtempSync(join(tmpdir(),'rinne-backup-test-'));
-  try { const source=join(dir,'source.db'),target=join(dir,'copy.db');const writer=new DatabaseSync(source);writer.exec('CREATE TABLE sample (id INTEGER); INSERT INTO sample VALUES (1)');writer.close();
-    const ro=new DatabaseSync(source,{readOnly:true});ro.prepare('VACUUM INTO ?').run(target);ro.close();
-    const copy=new DatabaseSync(target,{readOnly:true});assert.equal(copy.prepare('PRAGMA integrity_check').get()?.integrity_check,'ok');assert.equal(copy.prepare('SELECT count(*) n FROM sample').get()?.n,1);copy.close();
-  } finally {rmSync(dir,{recursive:true,force:true});}
-});
 test('hotfix RINNE_PUBLISH é preservado somente para API; outros ambientes e frontend continuam validados',()=>{
   const source=config() as any;source.services.api.environment.RINNE_PUBLISH='shared';
   const containers=['api','web'].map(service=>({Config:{Labels:{'com.docker.compose.service':service,'com.docker.compose.project':'quest-rinne-web',...(service==='web'?{'traefik.test':'preservar'}:{})},Env:Object.entries(source.services[service].environment).map(([k,v])=>`${k}=${service==='api'&&k==='RINNE_PUBLISH'?'api-local':v}`)},Mounts:service==='api'?[{Destination:'/app/server/data',Source:'/opt/private/data'}]:[]}));
@@ -88,7 +68,7 @@ test('CLI com marcador vazio prepara build com revisão, preservando imagens de 
 });
 test('retomada verifica identidade e integridade antes de sair, sem refazer backup; validação instalada não faz rollback',()=>{
   const prepare=readFileSync(new URL('../../deploy/prepare-release.sh',import.meta.url),'utf8'),resume=prepare.split("if [[ \"${2:-}\" == '--resume' ]]; then")[1]?.split('fi\n')[0];
-  assert.ok(resume?.includes('prepared.sha'));assert.ok(resume?.includes('source.sha256'));assert.ok(resume?.includes('app.db.sha256'));assert.ok(resume?.includes('exit 0'));assert.ok(!resume?.includes('VACUUM'));
+  assert.ok(resume?.includes('prepared.sha'));assert.ok(resume?.includes('source.sha256'));assert.ok(resume?.includes('db.dump.sha256'));assert.ok(resume?.includes('exit 0'));assert.ok(!resume?.includes('pg_dump'));
   const check=readFileSync(new URL('../../deploy/check-release.sh',import.meta.url),'utf8');
   assert.ok(check.includes('code.sha256'));assert.ok(check.includes('org.opencontainers.image.revision'));assert.ok(check.includes('web-assets.sha256'));assert.ok(!/up -d|rollback\.private/.test(check));
 });
@@ -103,6 +83,50 @@ test('imagens e Compose compilam a interface consolidada; scripts descobrem API 
   for(const dockerfile of ['frontend/Dockerfile','server/Dockerfile'])for(const [,sources] of file(dockerfile).matchAll(/^COPY (?!--from)(?:--chmod=\d+ )?(.+) \S+\r?$/gm))for(const source of sources.split(' '))assert.ok(existsSync(new URL('../../'+source,import.meta.url)),dockerfile+': '+source);
   for(const gone of ['web/package.json','backend/package.json'])assert.ok(!existsSync(new URL('../../'+gone,import.meta.url)),gone);
   const prepare=file('deploy/prepare-release.sh');assert.ok(prepare.includes('union config_files'));assert.ok(prepare.includes('label "$c"'));
-  const update=file('deploy/update.sh');for(const part of ['prepare-release.sh','check-release.sh','rollback.private.json','app.db.sha256','main "$@" < /dev/null'])assert.ok(update.includes(part),part);
+  const update=file('deploy/update.sh');for(const part of ['prepare-release.sh','check-release.sh','rollback.private.json','db.dump.sha256','src/migrate.ts','main "$@" < /dev/null'])assert.ok(update.includes(part),part);
   assert.ok(!/down -v|git reset|git clean|volume rm/.test(update));
+});
+
+const { findContainers, referenceFrom, verifyConfig, verifyDatabaseEnv } = createRequire(import.meta.url)('../../deploy/reconcile.cjs');
+const { renderInstall } = createRequire(import.meta.url)('../../deploy/render-release.cjs');
+const inspected=(service:string,extra:Record<string,string>={})=>({Created:'2026-11-27',Config:{Env:['DATABASE_URL=segredo-antigo'],Labels:{'com.docker.compose.project':'quest-rinne-web','com.docker.compose.service':service,'com.docker.compose.project.working_dir':'/opt/rt','com.docker.compose.project.config_files':'/opt/rt/compose.yml,/opt/rt/.releases/x/compose.override.json'+(service==='web'?',/opt/rt/security.yml':''),'com.docker.compose.project.environment_file':'/opt/rt/prod.env',...extra}},NetworkSettings:{Networks:service==='api'?{'quest-rinne_private':{},'quest-rinne-web_default':{}}:{'quest-rinne-web_default':{}}}});
+const middleware={'traefik.http.routers.core.middlewares':'quest-rinne-web-tailscale-only'};
+const installConfig=()=>({services:{
+  api:{environment:{DATABASE_URL:'postgres://qi_reader:x@db:5432/quest_rinne',APP_DATABASE_URL:'postgres://qi_app:x@db:5432/quest_rinne'},networks:{default:null,postgres:null},volumes:[]},
+  web:{environment:{},labels:{...middleware},ports:[{published:'18372',target:80}],networks:{default:null},volumes:[]},
+},networks:{default:{name:'quest-rinne-web_default'},postgres:{name:'quest-rinne_private'}}});
+test('instalação limpa: referência vem do backup, inclui override de segurança só do Web e ignora releases apagadas',()=>{
+  const containers=findContainers([{ruido:1},[inspected('api'),inspected('web',middleware)]]);
+  const reference=referenceFrom(containers,()=>true);
+  assert.deepEqual(reference.configFiles,['/opt/rt/compose.yml','/opt/rt/security.yml']);
+  assert.deepEqual(reference.envFiles,['/opt/rt/prod.env']);
+  assert.ok(!JSON.stringify(reference).includes('segredo-antigo'));
+  assert.throws(()=>referenceFrom(containers,(f:string)=>!f.endsWith('security.yml')),/security\.yml/);
+  assert.throws(()=>referenceFrom(findContainers([[inspected('api')]]),()=>true),/web/);
+  verifyConfig(installConfig(),reference);
+  const withoutMiddleware=installConfig();withoutMiddleware.services.web.labels={} as never;
+  assert.throws(()=>verifyConfig(withoutMiddleware,reference),/tailscale-only/);
+  const wrongPort=installConfig();wrongPort.services.web.ports[0].published='8080';
+  assert.throws(()=>verifyConfig(wrongPort,reference),/18372/);
+  verifyDatabaseEnv(installConfig());
+  const old=installConfig();old.services.api.environment.DATABASE_URL='postgres://quest_rinne_app_ro:y@db/quest_rinne';
+  assert.throws(()=>verifyDatabaseEnv(old),/qi_reader/);
+});
+test('override da instalação: imagens próprias, build do commit e segredos novos, sem valores no arquivo',()=>{
+  const stage='/opt/apps/quest-rinne-web-runtime/.releases/primeira',secrets='/opt/apps/quest-rinne-web-runtime/deploy/secrets/db.env';
+  const override=renderInstall(installConfig(),stage,secrets,'c'.repeat(40));
+  assert.deepEqual(override.services.api.env_file,[secrets]);
+  assert.equal(override.services.web.build.dockerfile,'frontend/Dockerfile');
+  assert.ok(!JSON.stringify(override).includes('postgres://'));
+  assert.throws(()=>renderInstall(installConfig(),stage,'/tmp/db.env','c'.repeat(40)),/segredos/);
+});
+test('instalador não é destrutivo, não depende de nada anterior e não usa postgres como credencial da aplicação',()=>{
+  const file=(name:string)=>readFileSync(new URL('../../'+name,import.meta.url),'utf8');
+  const install=file('deploy/install.sh');
+  assert.ok(!/down -v|volume rm|DROP |TRUNCATE|git reset|git clean|image rm|rmi /.test(install));
+  assert.ok(!/app\.db|rollback-api|prepare-release/.test(install));
+  for(const part of ['bootstrap.sql','src/migrate.ts','check-release.sh','rm -sf api web','user:admin','pg_terminate_backend','main "$@" < /dev/null'])assert.ok(install.includes(part),part);
+  assert.ok(!/postgres:\/\/postgres/.test(install));
+  for(const f of ['deploy/update.sh','deploy/prepare-release.sh','deploy/backup.sh','deploy/check-release.sh','server/Dockerfile','docker-compose.yml','docker-compose.prod.yml'])assert.ok(!/sqlite|app\.db|VACUUM INTO/i.test(file(f)),f);
+  for(const f of ['server/src/store.ts','server/src/auth.ts','server/src/admin.ts','server/src/access.ts','server/src/index.ts'])assert.ok(!/node:sqlite|DatabaseSync|ip-allowlist\.json/.test(file(f)),f);
 });

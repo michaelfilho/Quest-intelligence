@@ -41,14 +41,14 @@ before(async()=>{
     CREATE TABLE core.financial_accounts(iclips_id bigint,name text);
     INSERT INTO core.financial_accounts VALUES(7,'Conta Exemplo');
     CREATE SCHEMA audit;CREATE SCHEMA ingest;
-    CREATE TABLE audit.qpf11_publication_state(published_at timestamptz);
-    INSERT INTO audit.qpf11_publication_state VALUES ('2026-01-31');
-    CREATE TABLE audit.qpf11_publication_conflicts(resolved_at timestamptz);
-    INSERT INTO audit.qpf11_publication_conflicts VALUES(NULL),('2026-01-30');
-    CREATE TABLE ingest.qpf11_tasks(status text,expected_total int,received_records int);
-    INSERT INTO ingest.qpf11_tasks VALUES('RECEIVED',10,8),('DONE',3,3),('RUNNING',NULL,7);
-    CREATE TABLE ingest.qpf11_pages(record_count int);
-    INSERT INTO ingest.qpf11_pages VALUES(8),(3),(7);`);
+    CREATE TABLE audit.publication_state(published_at timestamptz);
+    INSERT INTO audit.publication_state VALUES ('2026-01-31');
+    CREATE TABLE audit.publication_conflicts(resolved_at timestamptz);
+    INSERT INTO audit.publication_conflicts VALUES(NULL),('2026-01-30');
+    CREATE TABLE ingest.tasks(status text,expected_total int,received_records int);
+    INSERT INTO ingest.tasks VALUES('RECEIVED',10,8),('DONE',3,3),('RUNNING',NULL,7);
+    CREATE TABLE ingest.pages(record_count int);
+    INSERT INTO ingest.pages VALUES(8),(3),(7);`);
 });
 after(async()=>pg.close());
 test('nomes reais, homônimos separados e departamento histórico pelo ID interno',async()=>{
@@ -174,7 +174,7 @@ test('políticas independentes não exigem classificações de outros indicadore
     await assert.rejects(()=>classifiedCash('despesas',f,read,s),SourceLimitation);
     assert.equal((await conflictsTable(f,page,read,s)).rows.reduce((n,r)=>n+Number(r.quantidade),0),2);
     await assert.rejects(()=>qualityMetric('divergencias_projetos',f,read,s),SourceLimitation);
-    await pg.exec("ALTER TABLE ingest.qpf11_tasks ADD COLUMN resource text; UPDATE ingest.qpf11_tasks SET resource='jobs' WHERE expected_total=10");
+    await pg.exec("ALTER TABLE ingest.tasks ADD COLUMN resource text; UPDATE ingest.tasks SET resource='jobs' WHERE expected_total=10");
     process.env.QUALITY_PROJECT_RESOURCE='jobs';
     assert.equal((await qualityMetric('divergencias_projetos',f,read,await discoverSchema(read))).value,1);
   } finally {

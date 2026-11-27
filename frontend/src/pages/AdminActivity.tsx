@@ -107,7 +107,7 @@ export function AuditSection() {
   );
 }
 
-// ---------------- Configurações persistentes (app.db) ----------------
+// ---------------- Configurações persistentes ----------------
 type Settings = Record<string, string | number | boolean>;
 export interface SettingsResponse {
   settings: Settings;

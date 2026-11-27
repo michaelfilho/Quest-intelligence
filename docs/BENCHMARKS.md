@@ -1,5 +1,7 @@
 # Benchmarks locais — fase 3 consolidada
 
+> Registro histórico, anterior à instalação limpa em PostgreSQL. Caminhos, procedimentos e persistência citados podem ter mudado; vale [ARQUITETURA.md](ARQUITETURA.md).
+
 Execução em 25/11/2026, Windows/Node 24.19.0, PGlite/WASM com dados exclusivamente sintéticos. Sem PostgreSQL externo, VPS ou Docker nativo. As medições não certificam produção.
 
 ## Reprodução
@@ -48,4 +50,4 @@ Testes incluem equivalência dos sete agregados com SQL anterior, três tipos te
 
 Navegação visual em 300 ms, primeiro card em 1 s, gráficos em 2 s, página completa em 3 s e relatórios em 5 s não estão certificados em produção. Endpoints locais favoráveis não substituem medições de rede, distribuição real dos dados, concorrência e publicações n8n. Nenhum índice novo foi recomendado sem planos nativos representativos.
 
-Ver [PERFORMANCE.md](PERFORMANCE.md), [EXPERIENCIA_GERENCIAL.md](EXPERIENCIA_GERENCIAL.md) e [ATUALIZACAO_PRODUCAO.md](ATUALIZACAO_PRODUCAO.md). Após publicação e atualização manual autorizadas, reconciliar os indicadores pelo backend existente e repetir os tempos/planos com dados reais. Não aumentar pool ou timeout para mascarar SQL caro.
+Ver [PERFORMANCE.md](PERFORMANCE.md), [EXPERIENCIA_GERENCIAL.md](EXPERIENCIA_GERENCIAL.md) e [INSTALACAO_VPS.md](INSTALACAO_VPS.md). Após publicação e atualização manual autorizadas, reconciliar os indicadores pelo backend existente e repetir os tempos/planos com dados reais. Não aumentar pool ou timeout para mascarar SQL caro.

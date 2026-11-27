@@ -29,14 +29,14 @@ function globalMonitor(f: Filters) {
 export async function ingestChart(f: Filters, reader: Query = q, snapshot?: SchemaSnapshot) {
   globalMonitor(f);
   const s = snapshot ?? await runtimeSchema();
-  if (!s.columns.some(c => c.schema === "ingest" && c.table === "qpf11_tasks" && c.column === "status")) throw new SourceLimitation("Status das tarefas não comprovado.");
-  const rows = await reader("SELECT coalesce(status::text,'Sem status') AS label, count(*)::int AS tarefas FROM ingest.qpf11_tasks GROUP BY 1 ORDER BY 1", []);
+  if (!s.columns.some(c => c.schema === "ingest" && c.table === "tasks" && c.column === "status")) throw new SourceLimitation("Status das tarefas não comprovado.");
+  const rows = await reader("SELECT coalesce(status::text,'Sem status') AS label, count(*)::int AS tarefas FROM ingest.tasks GROUP BY 1 ORDER BY 1", []);
   return { series: ["tarefas"], points: rows, reliability: "PARCIAL" as const, reason: "Fotografia atual dos estados literais, sem recorte temporal ou inferência de publicação integral." };
 }
 export async function ingestTable(f: Filters, p: Page, reader: Query = q, snapshot?: SchemaSnapshot) {
   globalMonitor(f);
   const s = snapshot ?? await runtimeSchema();
-  const cols = s.columns.filter(c => c.schema === "ingest" && c.table === "qpf11_tasks");
+  const cols = s.columns.filter(c => c.schema === "ingest" && c.table === "tasks");
   const keys = ["id", "task_id"].filter(name => cols.some(c => c.column === name));
   if (keys.length !== 1 || !cols.some(c => c.column === "status")) throw new SourceLimitation("Identidade unívoca da tarefa ou status não comprovados.");
   const update = cols.some(c => c.column === "updated_at" && temporalTypes.has(c.type)) ? "updated_at" : "NULL::timestamptz";
@@ -44,7 +44,7 @@ export async function ingestTable(f: Filters, p: Page, reader: Query = q, snapsh
   const sort = p.sort ?? "tarefa";
   if (!["tarefa", "status", "atualizado_em"].includes(sort)) throw new SourceLimitation("Ordenação de campo de coleta não mapeado.");
   const r = await paginate(`SELECT ${keys[0]}::text AS tarefa, status::text AS status, ${update} AS atualizado_em,
-    ${resource} AS recurso FROM ingest.qpf11_tasks`, [], p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST, tarefa`, reader);
+    ${resource} AS recurso FROM ingest.tasks`, [], p, `${sort} ${p.dir === "desc" ? "DESC" : "ASC"} NULLS LAST, tarefa`, reader);
   return { ...r, reason: "Estado atual do monitoramento, sem recorte temporal. Páginas e registros não são inferidos." };
 }
 export async function futureEntries(f: Filters, reader: Query = q, snapshot?: SchemaSnapshot): Promise<Computed> {

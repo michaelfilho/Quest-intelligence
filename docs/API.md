@@ -1,4 +1,4 @@
-# API do QUEST RINNE
+# API do QUEST INTELLIGENCE
 
 Base: `/api`. Respostas JSON, exceto os downloads.
 
@@ -14,7 +14,7 @@ Dimensões recebem os filtros globais e o escopo departamental imposto, retornan
 
 Erros: `400` dados inválidos (`details: [{campo, erro}]`) · `401` sem sessão (`code: UNAUTHENTICATED`) · `403` sem permissão, troca de senha pendente (`PASSWORD_CHANGE_REQUIRED`) ou CSRF · `404` · `409` conflito · `413` corpo grande · `429` limite · `500` erro interno (sem detalhes).
 
-Respostas analíticas indisponíveis podem incluir `reasonCode`: `MISSING_FIELD`, `INCOMPLETE_REGISTRY`, `INVALID_RELATIONSHIP`, `PARTIAL_COVERAGE`, `BUSINESS_POLICY_PENDING`, `SOURCE_NOT_INTEGRATED`, `NO_RECORDS` ou `QUERY_FAILURE`, além do motivo individual. Módulos de detalhe incluem `entityName`, resolvido dentro do período/escopo permitido. Campos de custo exigem `custos_pessoal.view`, inclusive em registros de indicadores e exportações. Novos perfis e consultas estão descritos em [CORRECOES_RELACIONAMENTOS.md](CORRECOES_RELACIONAMENTOS.md).
+Respostas analíticas indisponíveis podem incluir `reasonCode`: `MISSING_FIELD`, `INCOMPLETE_REGISTRY`, `INVALID_RELATIONSHIP`, `PARTIAL_COVERAGE`, `BUSINESS_POLICY_PENDING`, `SOURCE_NOT_INTEGRATED`, `NO_RECORDS` ou `QUERY_FAILURE`, além do motivo individual. Módulos de detalhe incluem `entityName`, resolvido dentro do período/escopo permitido. Campos de custo exigem `custos_pessoal.view`, inclusive em registros de indicadores e exportações.
 
 **Filtros globais** (query): `start`, `end` (AAAA-MM-DD; padrão o mês atual em America/Sao_Paulo), `compare=1`, `client`, `group`, `project`, `department`, `employee`, `service`, `status`. O escopo de departamento do usuário é imposto pelo servidor.
 
@@ -32,7 +32,7 @@ Respostas analíticas indisponíveis podem incluir `reasonCode`: `MISSING_FIELD`
 
 | rota | permissão | descrição |
 |---|---|---|
-| `GET /health` | pública | `status`, `database`; detalhes só com `config.view` |
+| `GET /health` | pública | `status`, `database` (leitura analítica), `application` (banco da aplicação); detalhes só com `config.view` |
 | `GET /modules` | sessão | módulos permitidos |
 | `GET /modules/:id` | do módulo | indicadores e gráficos; itens sem permissão → `FORBIDDEN` |
 | `GET /indicators/:id` | do indicador | definição, resultado e período de comparação |
@@ -49,7 +49,7 @@ Respostas analíticas indisponíveis podem incluir `reasonCode`: `MISSING_FIELD`
 | `GET /:id?format=json` | `relatorios.view` + permissões do relatório | relatório em JSON |
 | `GET /:id?format=csv\|xlsx\|md` | + `relatorios.export` | download (CSV `;` + BOM; XLSX nativo; Markdown) |
 
-Relatórios: `executivo`, `financeiro`, `rentabilidade`, `producao`, `clientes`, `contratos`, `departamentos`, `eficiencia`, `capacidade`, `qualidade`. O PDF é gerado pela impressão do navegador em `/relatorios/:id/imprimir`. Sem banco, o relatório sai marcado "DADOS INDISPONÍVEIS".
+Relatórios: `executivo`, `financeiro`, `rentabilidade`, `producao`, `clientes`, `contratos`, `departamentos`, `eficiencia`, `capacidade`, `qualidade`. O PDF é gerado pela impressão do navegador em `/relatorios/:id/imprimir`. Sem nenhum registro calculado (instalação nova ou banco indisponível), o relatório sai marcado "DADOS INDISPONÍVEIS".
 
 ## Administração — `/api/admin`
 
@@ -61,6 +61,7 @@ Relatórios: `executivo`, `financeiro`, `rentabilidade`, `producao`, `clientes`,
 | `GET /audit?page&pageSize&event&outcome&actor` | `auditoria.view` |
 | `GET /settings` / `PUT /settings` | `config.view` / `config.manage` |
 | `GET/PUT /api/access` | `ip.manage` (allowlist de IPs) |
+| `POST /api/access/requests` `{ip, action: allow|dismiss|unlock}` | `ip.manage` |
 # Carregamento progressivo — fase 3
 
 `GET /api/modules/:id?view=summary` retorna metadados do módulo sem calcular cards/gráficos. Mantém os guardas do módulo e filtros; os itens omitidos aparecem como FORBIDDEN no envelope de compatibilidade e não indicam ausência de permissão no frontend. O frontend usa somente os metadados desse resumo e solicita os itens autorizados individualmente.
@@ -81,3 +82,11 @@ A curadoria de abas não amplia permissões: ACCESS_MODULES conserva os módulos
 - statusSource (projects ou invoices) identifica a origem de status. A interface marca seleções operacionais como projects e oferece remoção ao navegar para Financeiro. O backend recusa a interpretação cruzada entre status de projeto e situação de nota, com UNSUPPORTED_FILTER e valor ausente. Chamadas anteriores sem marcador mantêm a semântica específica do endpoint; o marcador não concede permissões.
 
 Novas listagens: gestao_clientes, gestao_projetos, projetos_por_cliente, timesheet_projetos, timesheet_calendario, caixa_diario e caixa_mensal. Resultado/margem completos e estimativas não atribuíveis permanecem ausentes; nenhum valor é presumido como zero. Títulos em aberto e vencimentos ainda não comprovados continuam indisponíveis.
+
+## Cadastros comerciais e gerenciais
+
+Tabelas `marcas`, `contratos_cadastro`, `versoes_contrato`, `fees_jobs_extras`, `metas` e `regras_rateio` (`GET /api/tables/:id`), com os indicadores `marcas_cadastradas`, `contratos_cadastrados`, `fees_cadastrados`, `metas_cadastradas` e `regras_rateio_cadastradas`. Somente consulta: não há rota de escrita de dados empresariais.
+
+## Integrações
+
+Não há API HTTP de ingestão: os futuros workflows gravam direto no PostgreSQL com a role `qi_ingest`, conforme [CONTRATOS_N8N.md](CONTRATOS_N8N.md).

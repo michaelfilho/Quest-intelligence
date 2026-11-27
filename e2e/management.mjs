@@ -1,4 +1,4 @@
-// Navegação com Express/pg/PGlite e dados sintéticos. Sem PostgreSQL externo, VPS ou dados empresariais.
+// Navegação com PostgreSQL real e temporário e dados sintéticos de teste (scripts/homologar.mjs). Sem VPS nem dados empresariais.
 import {chromium} from 'playwright-core';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
@@ -44,6 +44,7 @@ try{
     await page.getByRole('button',{name:'Remover filtro de status'}).click();
     await page.waitForURL(url=>!url.searchParams.has('statusSource')&&!url.searchParams.has('status'));
   });
+  await check('estruturas novas: marcas, contratos e versões publicados aparecem',async()=>{await goto('/marcas');await (await panel('Marcas')).getByText('Marca fixture',{exact:true}).waitFor();await goto('/contratos?aba=cadastro');await (await panel('Contratos cadastrados')).getByText('Contrato fixture',{exact:true}).waitFor();await (await panel('Versões de contrato')).getByText('Versão inicial fixture',{exact:true}).waitFor();await shot('contratos');});
   await check('telas do design: consultas reais com dados da fonte',async()=>{
     await goto('/pecas-atividades');await (await panel('Peças e atividades trabalhadas')).getByText('Campanha Aurora').first().waitFor();
     await goto('/rentabilidade-comercial');await page.locator('[title^="Consultado em"]').first().waitFor();await shot('comercial');

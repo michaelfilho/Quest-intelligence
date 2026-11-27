@@ -83,6 +83,20 @@ function verifyRunning(config, containers) {
 module.exports.verifyRunning = verifyRunning;
 const serializeCompose = config => JSON.stringify(config, null, 2).replace(/\$/g, () => '$$');
 module.exports.serializeCompose = serializeCompose;
+/** Primeira instalação: mesmo override da release, mais o arquivo de segredos novo da API. */
+function renderInstall(config, stage, secretsFile, revision) {
+  if (!secretsFile.startsWith('/opt/apps/quest-rinne-web-runtime/deploy/secrets/') || path.normalize(secretsFile) !== secretsFile) throw new Error('Arquivo de segredos fora do local esperado');
+  const override = renderRelease(config, stage, undefined, revision);
+  override.services.api.env_file = [secretsFile];
+  return override;
+}
+module.exports.renderInstall = renderInstall;
+if (process.argv[1] === '--install') {
+  const config = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
+  const [stage, secretsFile, revision] = process.argv.slice(2);
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error('Hash de release inválido');
+  process.stdout.write(serializeCompose(renderInstall(config, stage, secretsFile, revision)));
+}
 if (process.argv[1] === '--prepare-release') {
   const fs = require('node:fs');
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));

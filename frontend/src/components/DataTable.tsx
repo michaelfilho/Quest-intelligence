@@ -78,7 +78,7 @@ export function DataTable({ def, filters, endpoint, title, search, actions,activ
 
   let body: ReactNode;
   if (q.isError) body = <ErrorState error={q.error} onRetry={() => q.refetch()} />;
-  else if(empty)body=empty;
+  else if(empty&&(display!=='table'||!columns.length))body=empty;
   else if(def.id==='timesheet_calendario'&&!loading&&!empty&&r)body=<HoursCalendar rows={r.rows} onSelect={row=>go(row)?.()}/>;
   else if (display === "table") {
     body = (
@@ -101,7 +101,9 @@ export function DataTable({ def, filters, endpoint, title, search, actions,activ
             </thead>
           )}
           <tbody>
-            {loading ? (
+            {empty ? (
+              <tr><td colSpan={Math.max(columns.length, 1) + 1}>{empty}</td></tr>
+            ) : loading ? (
               [0, 1, 2].map((i) => (
                 <tr key={i}><td colSpan={Math.max(columns.length, 1)} className="px-6 py-3"><Skeleton className="h-4 w-full" /></td></tr>
               ))

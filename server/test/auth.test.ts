@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { Client, createUser, PASSWORD, startServer } from "./helpers.js";
 
-const { store, closeStore, setSetting } = await import("../src/store.js");
+const { all, get, run, setSetting } = await import("../src/store.js");
 const { hashPassword, verifyPassword } = await import("../src/passwords.js");
 
 let srv: Awaited<ReturnType<typeof startServer>>;
@@ -22,7 +22,7 @@ test("Argon2id: formato PHC, salt aleatório, verificação", async () => {
   assert.ok(await verifyPassword("uma-senha-qualquer-123", a));
   assert.ok(!(await verifyPassword("outra", a)));
   assert.ok(!(await verifyPassword("x", "texto-puro")));
-  const row = store().prepare("SELECT password_hash FROM users WHERE username = 'ana'").get();
+  const row = (await get("SELECT password_hash FROM app.users WHERE username = 'ana'"));
   assert.ok(!String(row?.password_hash).includes(PASSWORD)); // nunca texto puro
 });
 
@@ -48,7 +48,7 @@ test("login: cookie seguro, sessão, logout", async () => {
   assert.ok(!JSON.stringify(me.body).includes("hash"));
   // O banco guarda só o hash do token.
   const token = c.cookie.split("=")[1];
-  assert.equal(store().prepare("SELECT count(*) n FROM sessions WHERE id = ?").get(token)?.n, 0);
+  assert.equal((await get("SELECT count(*) n FROM app.sessions WHERE id = ?", token))?.n, 0);
   assert.equal((await c.req("/api/auth/logout", { method: "POST" })).status, 204);
   assert.equal((await c.req("/api/modules")).status, 401);
 });
@@ -73,7 +73,7 @@ test("bloqueio progressivo por IP: 3 erros = 15 min, depois 45 e 135; acertar ze
   await createUser("progressivo", "analista");
   const ip = "203.0.113.80";
   const c = new Client(srv.base, ip);
-  const expire = () => store().prepare("UPDATE login_locks SET locked_until = 1 WHERE ip = ?").run(ip);
+  const expire = () => run("UPDATE app.login_locks SET locked_until = 'epoch' WHERE ip = ?", ip);
   // usuários inexistentes diferentes: não esbarra no limite por usuário
   let n = 0;
   const wrong = () => c.login("fantasma" + n++, "errada-123456");
@@ -84,10 +84,10 @@ test("bloqueio progressivo por IP: 3 erros = 15 min, depois 45 e 135; acertar ze
     assert.equal(third.status, 429);
     assert.ok(Math.abs(Number(third.headers.get("retry-after")) - minutes * 60) <= 2);
     assert.equal((await c.login("progressivo")).status, 429); // nem a senha certa durante o bloqueio
-    expire();
+    await expire();
   }
   assert.equal((await c.login("progressivo")).status, 204);
-  assert.equal(store().prepare("SELECT count(*) n FROM login_locks WHERE ip = ?").get(ip)?.n, 0);
+  assert.equal((await get("SELECT count(*) n FROM app.login_locks WHERE ip = ?", ip))?.n, 0);
 });
 
 test("CSRF: POST sem header próprio ou de outra origem é recusado", async () => {
@@ -123,14 +123,14 @@ test("troca obrigatória de senha no primeiro acesso + política de senha + revo
 test("expiração por inatividade e absoluta", async () => {
   const c = new Client(srv.base);
   await c.login("ana");
-  store().prepare("UPDATE sessions SET last_seen_at = ? WHERE user_id = (SELECT id FROM users WHERE username = 'ana')").run(new Date(Date.now() - 31 * 60000).toISOString());
+  (await run("UPDATE app.sessions SET last_seen_at = ? WHERE user_id = (SELECT id FROM app.users WHERE username = 'ana')", new Date(Date.now() - 31 * 60000).toISOString()));
   assert.equal((await c.req("/api/modules")).status, 401);
   const d = new Client(srv.base);
   await d.login("ana");
-  store().prepare("UPDATE sessions SET expires_at = ? WHERE user_id = (SELECT id FROM users WHERE username = 'ana')").run(new Date(Date.now() - 1000).toISOString());
+  (await run("UPDATE app.sessions SET expires_at = ? WHERE user_id = (SELECT id FROM app.users WHERE username = 'ana')", new Date(Date.now() - 1000).toISOString()));
   assert.equal((await d.req("/api/modules")).status, 401);
-  assert.equal(store().prepare("SELECT count(*) n FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = 'ana')").get()?.n, 0); // limpas
-  setSetting("security.session_idle_minutes", 30, "teste");
+  assert.equal((await get("SELECT count(*) n FROM app.sessions WHERE user_id = (SELECT id FROM app.users WHERE username = 'ana')"))?.n, 0); // limpas
+  await setSetting("security.session_idle_minutes", 30, "teste");
 });
 
 test("sessões: listar e revogar as próprias; admin revoga de outros", async () => {
@@ -167,12 +167,12 @@ test("gestão de usuários: criação com senha temporária, desativação derru
   // Edição parcial não apaga permissões individuais.
   assert.equal((await adm.req(`/api/admin/users/${created.body.id}`, { method: "PATCH", body: { grants: ["qualidade.view"] } })).status, 204);
   assert.equal((await adm.req(`/api/admin/users/${created.body.id}`, { method: "PATCH", body: { name: "Financeiro 1" } })).status, 204);
-  assert.deepEqual(JSON.parse(String(store().prepare("SELECT grants FROM users WHERE id = ?").get(created.body.id)?.grants)), ["qualidade.view"]);
+  assert.deepEqual((await get("SELECT grants FROM app.users WHERE id = ?", created.body.id))?.grants, ["qualidade.view"]);
   assert.equal((await adm.req(`/api/admin/users/${created.body.id}`, { method: "PATCH", body: { active: false } })).status, 204);
   assert.equal((await u.req("/api/modules")).status, 401);
   assert.equal((await u.login("fin.um", "Financeiro-Forte-2026")).status, 401);
 
-  const adminId = store().prepare("SELECT id FROM users WHERE username = 'admin.teste'").get()?.id;
+  const adminId = (await get("SELECT id FROM app.users WHERE username = 'admin.teste'"))?.id;
   assert.equal((await adm.req(`/api/admin/users/${adminId}`, { method: "PATCH", body: { roleId: "analista" } })).status, 409);
   assert.equal((await adm.req(`/api/admin/users/${adminId}`, { method: "PATCH", body: { active: false } })).status, 409);
   assert.equal((await adm.req("/api/admin/users", { method: "POST", body: { username: "x", name: "x" } })).status, 400);
@@ -186,7 +186,7 @@ test("auditoria registra eventos sem segredos", async () => {
   assert.equal(r.status, 200);
   const events = new Set(r.body.rows.map((x: any) => `${x.event}:${x.outcome}`));
   for (const e of ["auth.login:success", "auth.login:failure", "auth.login:denied", "auth.logout:success", "auth.password_change:success", "user.create:success", "user.update:success", "session.revoke:success"]) assert.ok(events.has(e), e);
-  const dump = JSON.stringify(store().prepare("SELECT * FROM audit_log").all());
+  const dump = JSON.stringify((await all("SELECT * FROM app.audit_log")));
   for (const secret of [PASSWORD, "Outra-Senha-Forte-2026", "Financeiro-Forte-2026", "rinne_sid"]) assert.ok(!dump.includes(secret), "vazou: " + secret);
   assert.ok(!/argon2id/.test(dump));
   const ana = new Client(srv.base);
@@ -194,13 +194,12 @@ test("auditoria registra eventos sem segredos", async () => {
   assert.equal((await ana.req("/api/admin/audit")).status, 403);
 });
 
-test("persistência: dados sobrevivem ao fechar e reabrir o banco da aplicação", async () => {
-  const before = store().prepare("SELECT count(*) n FROM users").get()?.n;
-  setSetting("general.organization", "Quest Teste", "teste");
-  closeStore();
-  assert.equal(store().prepare("SELECT count(*) n FROM users").get()?.n, before);
-  assert.equal(JSON.parse(String(store().prepare("SELECT value FROM app_settings WHERE key = 'general.organization'").get()?.value)), "Quest Teste");
-  const files = (await import("node:fs")).readdirSync(new URL("../migrations", import.meta.url)).filter((x) => x.endsWith(".sql")).length;
-  assert.equal(store().prepare("SELECT count(*) n FROM schema_migrations").get()?.n, files); // cada migration aplicada uma única vez
+test("persistência: configurações e usuários ficam no banco da aplicação", async () => {
+  const before = (await get("SELECT count(*) n FROM app.users"))?.n;
+  await setSetting("general.organization", "Quest Teste", "teste");
+  assert.equal((await get("SELECT count(*) n FROM app.users"))?.n, before);
+  assert.equal((await get("SELECT value FROM app.app_settings WHERE key = 'general.organization'"))?.value, "Quest Teste");
+  const files = (await import("../src/migrate.js")).migrationFiles().length;
+  assert.equal(Number((await get("SELECT count(*) n FROM app.schema_migrations"))?.n), files); // cada migration aplicada uma única vez
   assert.equal((await new Client(srv.base).login("ana")).status, 204);
 });

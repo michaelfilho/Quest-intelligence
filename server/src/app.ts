@@ -10,7 +10,7 @@ import { allowedColumns, chartAllowed, indicatorAllowed, moduleAllowed, scopeFil
 import { dbState, q, SCHEMAS } from "./db.js";
 import { filtersSchema, pageSchema } from "./filters.js";
 import { csvCell,reportsRouter } from "./reports.js";
-import {audit} from './store.js';
+import {audit,get} from './store.js';
 import { runtimeSchema, mappingCapabilities } from "./schema.js";
 import { withReadContext } from "./read-once.js";
 import { resolveChart, resolveDimension, resolveIndicator, resolveModule, resolveRecords, resolveTable } from "./services.js";
@@ -64,7 +64,8 @@ export function createApp() {
     if (db.state === "CONNECTED" && req.user && can(req, "config.view")) {
       [session] = await q("select current_database() as database, current_user as user, current_setting('transaction_read_only') as read_only, now()::text as server_time");
     }
-    res.json({ status: "ok", database: db.state, session, timezone: process.env.APP_TIMEZONE ?? "America/Sao_Paulo", ...(req.user && can(req, "config.view") ? { schemas: SCHEMAS } : {}) });
+    const application = await get("SELECT 1 AS ok").then(() => "CONNECTED", () => "DATABASE_UNAVAILABLE");
+    res.json({ status: "ok", database: db.state, application, session, timezone: process.env.APP_TIMEZONE ?? "America/Sao_Paulo", ...(req.user && can(req, "config.view") ? { schemas: SCHEMAS } : {}) });
   }));
 
   // Daqui em diante: sessão válida obrigatória (bloqueio por padrão).
@@ -127,7 +128,7 @@ export function createApp() {
     const rows=stripRows(req.user!,def,t.rows),columns=allowedColumns(req.user!,def);
     if(exporting){
       if(t.status!=='OK')return res.status(409).json({error:'Dados indisponíveis para exportar.'});
-      audit({event:'table.export',actorId:req.user!.id,actor:req.user!.username,target:def.id,details:{page:p.page,rows:rows.length}});
+      await audit({event:'table.export',actorId:req.user!.id,actor:req.user!.username,target:def.id,details:{page:p.page,rows:rows.length}});
       return res.set({'Content-Type':'text/csv; charset=utf-8','Content-Disposition':`attachment; filename="rinne_${def.id}_pagina_${p.page}.csv"`}).send('\uFEFF'+[columns.map(c=>c.label),...rows.map(row=>columns.map(c=>row[c.key]))].map(row=>row.map(csvCell).join(';')).join('\r\n'));
     }
     res.json({ ...t, rows, columns:columns.map(c=>c.key) });

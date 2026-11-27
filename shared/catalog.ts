@@ -16,8 +16,8 @@ const CLI = "core.clients";
 const GRP = "core.client_groups";
 const DEP = "core.departments";
 const EMP = "core.employees";
-const QT = "ingest.qpf11_tasks";
-const QP = "ingest.qpf11_pages";
+const QT = "ingest.tasks";
+const QP = "ingest.pages";
 const AUDIT = "audit.* (a mapear)";
 
 type I = Omit<IndicatorDef, "id">;
@@ -25,6 +25,11 @@ const ind = (label: string, unit: Unit, basis: Basis, formula: string, sources: 
   ({ label, unit, basis, formula, sources, requires, higherIsBetter });
 
 const indicators: Record<string, I> = {
+  marcas_cadastradas:ind('Marcas cadastradas','count','operacional','Contagem física atual de marcas.',['core.brands']),
+  contratos_cadastrados:ind('Contratos cadastrados','count','operacional','Contagem física atual de contratos.',['core.contracts']),
+  fees_cadastrados:ind('Fees e jobs extras cadastrados','count','operacional','Contagem física atual de lançamentos de fee e job extra.',['core.fees']),
+  metas_cadastradas:ind('Metas cadastradas','count','operacional','Contagem física atual de metas.',['core.goals']),
+  regras_rateio_cadastradas:ind('Regras de rateio cadastradas','count','operacional','Contagem física atual de regras.',['core.allocation_rules']),
   receitas_nao_operacionais:ind('Receitas não operacionais recebidas','BRL','recebimento','Soma de Entrada isolada na classificação textual RECEITAS NÃO OPERACIONAIS por payment_date.',[FE,'core.financial_categories']),
   despesas_fixas:ind('Despesas operacionais fixas pagas','BRL','recebimento','Saídas isoladas classificadas DESPESAS OPERACIONAIS CUSTO FIXO.',[FE,'core.financial_categories']),
   despesas_variaveis:ind('Despesas operacionais variáveis pagas','BRL','recebimento','Saídas isoladas classificadas DESPESAS OPERACIONAIS CUSTO VARIÁVEL.',[FE,'core.financial_categories']),
@@ -53,14 +58,14 @@ const indicators: Record<string, I> = {
   horas_com_custo_positivo:ind('Horas com custo registrado positivo','hours','operacional','Duração válida de apontamentos com labor_cost finito positivo.',[TIME]),
   horas_sem_custo_positivo:ind('Horas sem custo positivo comprovado','hours','operacional','Duração válida com labor_cost ausente, inválido, zero ou negativo; não estima custo.',[TIME]),
   cobertura_custo_positivo_horas:ind('Cobertura de custo positivo por horas','percent','operacional','Horas com labor_cost finito positivo / horas válidas do mesmo escopo.',[TIME]),
-  estados_publicacao:ind('Registros com estado de publicação — atual','count','ingestao','Linhas atuais em audit.qpf11_publication_state, sem certificar únicos publicados ou cobertura.', ['audit.qpf11_publication_state']),
+  estados_publicacao:ind('Registros com estado de publicação — atual','count','ingestao','Linhas atuais em audit.publication_state, sem certificar únicos publicados ou cobertura.', ['audit.publication_state']),
   atividades_trabalhadas: ind('Atividades com apontamento','count','operacional','Unidades distintas TASK/WORKFLOW com apontamentos válidos e chave composta unívoca; não são entregas.',[TIME,TASKS,STEPS]),
   pecas_trabalhadas: ind('Pe\u00e7as com apontamento v\u00e1lido','count','operacional','Pe\u00e7as distintas em apontamentos TASK ou WORKFLOW com v\u00ednculo un\u00edvoco ao projeto; n\u00e3o s\u00e3o entregas.',[TIME,PIECES]),
   projetos_suspensos: ind('Projetos suspensos — atual','count','operacional','Fotografia atual dos status textuais explicitamente aprovados na política gerencial.',[JOBS]),
   cobertura_custos: ind('Cobertura de custo registrado','percent','operacional','Apontamentos válidos com labor_cost finito / apontamentos válidos, incluindo zero.',[TIME]),
   apontamentos_custo_zero: ind('Duração positiva com custo zero','count','operacional','Apontamentos válidos com duração positiva e labor_cost igual a zero; não estima custo ausente.',[TIME]),
-  conflitos_abertos: ind('Conflitos de publicação abertos — atual','count','ingestao','Contagem pontual com resolved_at nulo; todos os recursos.', ['audit.qpf11_publication_conflicts']),
-  conflitos_resolvidos: ind('Conflitos de publicação resolvidos — atual','count','ingestao','Contagem pontual com resolved_at preenchido e não futuro.', ['audit.qpf11_publication_conflicts']),
+  conflitos_abertos: ind('Conflitos de publicação abertos — atual','count','ingestao','Contagem pontual com resolved_at nulo; todos os recursos.', ['audit.publication_conflicts']),
+  conflitos_resolvidos: ind('Conflitos de publicação resolvidos — atual','count','ingestao','Contagem pontual com resolved_at preenchido e não futuro.', ['audit.publication_conflicts']),
   divergencias_contagem: ind('Tarefas com contagens divergentes — atual','count','ingestao','expected_total diferente de received_records, com ambas contagens válidas; todos os recursos.',[QT]),
   registros_reportados_tarefas: ind('Registros reportados pelas tarefas — atual','count','ingestao','Soma de received_records não negativos; pode incluir repetições, não são publicados únicos.',[QT]),
   clientes_cadastrados: ind("Clientes cadastrados — atual", "count", "operacional", "Contagem física atual de core.clients; sem recorte nem comparação histórica.", [CLI]),
@@ -129,9 +134,9 @@ const indicators: Record<string, I> = {
   horas_vs_previstas: ind('Horas do per\u00edodo \u00f7 previs\u00e3o integral','percent','operacional','Horas do per\u00edodo no subconjunto com estimativa positiva / estimativa integral dessas unidades, uma vez por chave.',[TIME,TASKS,STEPS]),
 
   // ---------------- QUALIDADE ----------------
-  ultima_sincronizacao: ind("Última atualização de tarefas", "datetime", "ingestao", "Maior updated_at em ingest.qpf11_tasks. Não certifica coleta bem-sucedida nem publicação integral.", [QT]),
+  ultima_sincronizacao: ind("Última atualização de tarefas", "datetime", "ingestao", "Maior updated_at em ingest.tasks. Não certifica coleta bem-sucedida nem publicação integral.", [QT]),
   ultima_publicacao_core: ind("Última publicação no CORE", "datetime", "ingestao", "Data da última publicação registrada na auditoria.", [AUDIT]),
-  tarefas_recebidas: ind("Tarefas de coleta", "count", "ingestao", "Total de tarefas de coleta do QPF.", [QT]),
+  tarefas_recebidas: ind("Tarefas de coleta", "count", "ingestao", "Total de tarefas de coleta registradas.", [QT]),
   tarefas_pendentes: ind("Tarefas pendentes", "count", "ingestao", "Tarefas com status pendente.", [QT]),
   tarefas_em_execucao: ind("Tarefas em execução", "count", "ingestao", "Tarefas com status em execução.", [QT]),
   tarefas_em_reconciliacao: ind("Tarefas em reconciliação", "count", "ingestao", "Tarefas em reconciliação.", [QT]),
@@ -189,6 +194,12 @@ const col = (key: string, label: string, type: ColumnType = "text"): Column => (
 type T = Omit<TableDef, "id">;
 
 const tables: Record<string, T> = {
+  marcas:{label:'Marcas',sources:['core.brands',CLI],columns:[col('marca','Marca'),col('cliente','Cliente'),col('situacao','Situação')]},
+  contratos_cadastro:{label:'Contratos cadastrados',sources:['core.contracts',CLI],columns:[col('contrato','Contrato'),col('cliente','Cliente'),col('marca','Marca'),col('tipo','Tipo'),col('situacao','Situação'),col('inicio','Início','date'),col('fim','Fim','date')]},
+  versoes_contrato:{label:'Versões de contrato',sources:['core.contract_versions','core.contracts'],columns:[col('contrato','Contrato'),col('versao','Versão','count'),col('vigencia','Vigência','date'),col('valor','Valor','BRL'),col('descricao','Descrição')]},
+  fees_jobs_extras:{label:'Fees e jobs extras',sources:['core.fees','core.contracts',JOBS],columns:[col('tipo','Tipo'),col('contrato','Contrato'),col('projeto','Projeto'),col('competencia','Competência','date'),col('valor','Valor','BRL'),col('descricao','Descrição')]},
+  metas:{label:'Metas por indicador',sources:['core.goals'],columns:[col('indicador','Indicador'),col('inicio','Início','date'),col('fim','Fim','date'),col('meta','Meta','ratio'),col('sentido','Sentido'),col('aprovada_em','Aprovada em','datetime')]},
+  regras_rateio:{label:'Regras de rateio',sources:['core.allocation_rules'],columns:[col('regra','Regra'),col('criterio','Critério'),col('inicio','Início','date'),col('fim','Fim','date'),col('situacao','Situação')]},
   rateios_financeiros:{label:'Conciliação dos rateios por lançamento',sources:[FE,FECC],columns:[col('data','Pagamento','date'),col('valor','Valor original','BRL'),col('rateado','Valor das parcelas','BRL'),col('percentual','Soma percentual','ratio'),col('centros','Centros','count'),col('situacao','Situação')]},
   faturamento_por_cliente:{label:'Faturamento por cliente comprovado',sources:[INV,CLI],link:{column:'cliente_id',to:'clientes'},columns:[col('cliente','Cliente'),col('faturado','Faturado vinculado','BRL'),col('notas','Notas','count')]},
   notas_vinculos:{label:'Notas: vínculos unívocos, ambíguos e ausentes',sources:[INV,CLI],columns:[col('numero','Número'),col('emissao','Emissão','date'),col('cliente','Cliente'),col('valor','Valor','BRL'),col('situacao','Status da nota'),col('vinculo','Associação documental')]},
@@ -196,8 +207,8 @@ const tables: Record<string, T> = {
   notas_sem_vinculo_detalhes:{label:'Notas sem vínculo válido',sources:[INV,CLI],columns:[col('numero','Número'),col('emissao','Emissão','date'),col('cliente','Cliente'),col('valor','Valor','BRL'),col('situacao','Status da nota'),col('vinculo','Associação documental')]},
   pecas_trabalhadas:{label:'Peças com apontamentos no período',sources:[TIME,PIECES,'core.piece_catalog'],columns:[col('peca','Peça'),col('catalogo','Catálogo'),col('projeto','Projeto'),col('cliente','Cliente'),col('departamentos','Departamentos históricos'),col('horas','Horas','hours'),col('apontamentos','Apontamentos','count')]},
   coorte_calendario:{label:'Coorte de calendário: Finalizado',sources:[JOBS],columns:[col('projeto','Projeto'),col('abertura','Abertura','datetime'),col('conclusao','Conclusão informada','datetime'),col('dias','Dias corridos','days'),col('situacao','Validade temporal')]},
-  estados_publicacao:{label:'Estado de publicação por recurso — atual',sources:['audit.qpf11_publication_state'],columns:[col('recurso','Recurso'),col('estados','Linhas de estado','count'),col('identidades','IDs distintos no recurso','count'),col('ultima_publicacao','Última publicação','datetime')]},
-  conflitos_detalhes:{label:'Conflitos: razões e resolução — restrito',sources:['audit.qpf11_publication_conflicts'],columns:[col('recurso','Recurso'),col('id_origem','Origem · rastreabilidade'),col('motivo','Razão'),col('resolvido_em','Resolução','datetime'),col('situacao','Situação'),col('ocorrencias','Ocorrências','count')]},
+  estados_publicacao:{label:'Estado de publicação por recurso — atual',sources:['audit.publication_state'],columns:[col('recurso','Recurso'),col('estados','Linhas de estado','count'),col('identidades','IDs distintos no recurso','count'),col('ultima_publicacao','Última publicação','datetime')]},
+  conflitos_detalhes:{label:'Conflitos: razões e resolução — restrito',sources:['audit.publication_conflicts'],columns:[col('recurso','Recurso'),col('id_origem','Origem · rastreabilidade'),col('motivo','Razão'),col('resolvido_em','Resolução','datetime'),col('situacao','Situação'),col('ocorrencias','Ocorrências','count')]},
   dre_categorias:{label:'Movimentos por categoria e classificação DRE',sources:[FE,'core.financial_categories'],columns:[col('nome','Categoria'),col('classificacao','DRE de origem'),col('entrada','Entradas','BRL'),col('saida','Saídas','BRL'),col('movimentos','Movimentos','count')]},
   dre_contas:{label:'Movimentos por conta financeira',sources:[FE,'core.financial_accounts'],columns:[col('nome','Conta'),col('entrada','Entradas','BRL'),col('saida','Saídas','BRL'),col('movimentos','Movimentos','count')]},
   movimentos_clientes:{label:'Movimentos com vínculo de cliente pelo projeto',sources:[FE,JOBS,CLI],columns:[col('nome','Cliente'),col('entrada','Entradas','BRL'),col('saida','Saídas','BRL'),col('movimentos','Movimentos','count')]},
@@ -226,8 +237,8 @@ const tables: Record<string, T> = {
   timesheet_departamentos: { label: "Horas por departamento", sources: [TIME, DEP], columns: [col("departamento", "Departamento"), col("colaboradores", "Colaboradores", "count"), col("apontamentos", "Apontamentos", "count"), col("horas", "Horas", "hours"), col("horas_retrabalho", "Retrabalho", "hours")] },
   contratado_executado: { label: "Contratado × executado", sources: ["contratos", PIECES, TIME], link: { column: "cliente_id", to: "clientes" }, columns: [col("cliente", "Cliente"), col("escopo", "Escopo contratado", "count"), col("entregue", "Entregue", "count"), col("desvio", "Desvio", "percent"), col("horas", "Horas", "hours"), col("alteracoes", "Alterações", "count")] },
   capacidade_colaboradores: { label: "Carga por colaborador", sources: [EMP, TIME], columns: [col("colaborador", "Colaborador"), col("departamento", "Departamento"), col("capacidade", "Capacidade", "hours"), col("registradas", "Registradas", "hours"), col("ocupacao", "Ocupação", "percent"), col("projetos", "Projetos", "count")] },
-  conflitos: {label:'Conflitos de publica\u00e7\u00e3o por estado \u2014 atual',sources:['audit.qpf11_publication_conflicts'],columns:[col('situacao','Situa\u00e7\u00e3o'),col('quantidade','Conflitos','count')]},
-  tarefas_ingest: { label: "Tarefas de coleta (QPF)", sources: [QT], columns: [col("tarefa", "Tarefa"), col("recurso", "Recurso"), col("status", "Status"), col("paginas", "Páginas", "count"), col("registros", "Registros", "count"), col("atualizado_em", "Atualizado em", "datetime")] },
+  conflitos: {label:'Conflitos de publica\u00e7\u00e3o por estado \u2014 atual',sources:['audit.publication_conflicts'],columns:[col('situacao','Situa\u00e7\u00e3o'),col('quantidade','Conflitos','count')]},
+  tarefas_ingest: { label: "Tarefas de coleta", sources: [QT], columns: [col("tarefa", "Tarefa"), col("recurso", "Recurso"), col("status", "Status"), col("paginas", "Páginas", "count"), col("registros", "Registros", "count"), col("atualizado_em", "Atualizado em", "datetime")] },
   periodos_incompletos: { label: "Períodos incompletos", sources: [QT, QP], columns: [col("recurso", "Recurso"), col("periodo", "Período"), col("situacao", "Situação"), col("observacao", "Observação")] },
 };
 
@@ -304,6 +315,17 @@ for(const [id,label]of Object.entries(TABLE_LABELS))if(tables[id])tables[id].lab
 tables.colaboradores.columns=tables.colaboradores.columns.map(c=>c.key==='cargo'?{...c,label:'Departamentos com atividade'}:c);
 tables.apontamentos.columns.push(col('custo_registrado','Custo registrado','BRL'));
 // Curadoria visual não amplia o acesso aos itens existentes.
+// Cadastros comerciais e gerenciais pertencem ao módulo que concede o acesso a eles.
+for(const [moduleId,ids,tableIds] of [
+  ['clientes',['marcas_cadastradas'],['marcas']],
+  ['contratos',['contratos_cadastrados','fees_cadastrados'],['contratos_cadastro','versoes_contrato','fees_jobs_extras']],
+  ['executivo',['metas_cadastradas','departamentos_cadastrados'],['metas']],
+  ['financeiro',['regras_rateio_cadastradas'],['regras_rateio']],
+] as [string,string[],string[]][]){
+  const target=MODULES.find(m=>m.id===moduleId)!;
+  target.indicators=[...target.indicators,...ids];
+  target.tables=[...target.tables,...tableIds];
+}
 export const ACCESS_MODULES:Record<'indicators'|'charts'|'tables',Record<string,string[]>>={indicators:{},charts:{},tables:{}};
 for(const kind of ['indicators','charts','tables'] as const)for(const m of MODULES)for(const id of m[kind])(ACCESS_MODULES[kind][id]??=[]).push(m.id);
 for(const [id,views]of Object.entries({...MANAGEMENT_VIEWS,financeiro:[...MANAGEMENT_VIEWS.financeiro,DRE_VIEW,CASH_VIEW]})){

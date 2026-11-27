@@ -204,11 +204,14 @@ async function dimensionSource(f: Filters, dim: CashDimension, type: "Entrada" |
   }
   const src = cashSource(f, profile);
   const table = dim === 'category' ? 'financial_categories' : dim === 'client' ? 'clients' : 'client_groups';
-  return { params: [...src.params, type], sql: `WITH source AS (${src.sql}), grouped AS (
-    SELECT ${key} AS entity_id, CASE WHEN ${key} IS NULL THEN 'Sem vínculo' ELSE ${nameSQL(snapshot,table,'iclips_id',key,'Cadastro sem nome')} END AS label, sum(s.valor)::numeric AS amount,
+  // O nome vem depois do agrupamento: subconsulta correlacionada não pode usar a expressão agrupada.
+  return { params: [...src.params, type], sql: `WITH source AS (${src.sql}), totals AS (
+    SELECT ${key} AS entity_id, sum(s.valor)::numeric AS amount,
       count(*) FILTER (WHERE s.valor<0)::int AS negatives FROM source s ${join}
     WHERE s.standalone AND s.valor IS NOT NULL AND s.payment_date::timestamptz<=CURRENT_TIMESTAMP AND s.tipo=$${src.params.length+1}
     GROUP BY ${key}
+  ), grouped AS (
+    SELECT totals.*, CASE WHEN totals.entity_id IS NULL THEN 'Sem vínculo' ELSE ${nameSQL(snapshot,table,'iclips_id','totals.entity_id','Cadastro sem nome')} END AS label FROM totals
   ) SELECT entity_id,label,amount::float8 AS amount, sum(amount) OVER()::float8 AS total_amount,
     sum(negatives) OVER()::int AS negatives FROM grouped` };
 }

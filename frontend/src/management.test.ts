@@ -4,7 +4,7 @@ import {CASH_VIEW,DRE_VIEW,MANAGEMENT_VIEWS} from '../../shared/management';
 import {columnPermission} from '../../shared/permissions';
 import {shortState,managementText} from './lib';
 it('abas referenciam itens existentes e mantêm os 107 indicadores do catálogo',()=>{
-  expect(Object.keys(INDICATORS)).toHaveLength(107);
+  expect(Object.keys(INDICATORS)).toHaveLength(112);
   for(const view of [...Object.values(MANAGEMENT_VIEWS).flat(),DRE_VIEW,CASH_VIEW]){
     for(const id of view.indicators)expect(INDICATORS[id],id).toBeDefined();
     for(const id of view.charts)expect(CHARTS[id],id).toBeDefined();

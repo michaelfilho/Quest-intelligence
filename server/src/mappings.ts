@@ -16,6 +16,7 @@ import {STATUS_OBSERVATIONS,observedStatusMetric,observedStatusChart,calendarMet
 import {publicationMetric,publicationsTable,conflictDetails} from './publications.js';
 import {runtimeSchema} from './schema.js';
 import {cashPeriods,entitySummary,resultEvolution} from './management.js';
+import {managementRegistry,REGISTRY_TABLES} from './management-registries.js';
 
 export type Computed = Pick<IndicatorResult, "value" | "recordsUsed" | "recordsExcluded" | "exclusions" | "updatedAt" | "reason" | "temporalField" | "coverage"> & {
   reliability: Reliability;
@@ -80,6 +81,7 @@ for (const id of Object.keys(COST_CHARTS)) chartImpls[id]=f=>costChart(id,f);
 for (const id of CASH_DIMENSION_CHARTS) chartImpls[id] = f => cashDimensionChart(id,f);
 export const tableImpls: Partial<Record<string, TableImpl>> = Object.fromEntries(TIME_TABLES.map(id => [id, (f: Filters, p: Page) => timeTable(id, f, p)]));
 tableImpls.clientes = clientTable;
+for(const id of REGISTRY_TABLES)tableImpls[id]=(f,p)=>managementRegistry(id,f,p);
 tableImpls.gestao_clientes=(f,p)=>entitySummary('client',f,p);
 tableImpls.gestao_projetos=(f,p)=>entitySummary('project',f,p);
 tableImpls.projetos_por_cliente=(f,p)=>entitySummary('group',f,p);

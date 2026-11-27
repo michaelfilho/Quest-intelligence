@@ -20,7 +20,7 @@ if [[ "${2:-}" == '--resume' ]]; then
   BACKUP="/opt/backups/quest-rinne/$STAMP"
   [[ "$(realpath "$BACKUP")" == "$BACKUP" ]]
   sha256sum --check --status "$BACKUP/input-files.sha256"
-  sha256sum --check --status "$BACKUP/app.db.sha256"
+  sha256sum --check --status "$BACKUP/db.dump.sha256"
   (cd "$STAGE"; sha256sum --check --status source.sha256)
   [[ -s "$STAGE/compose.override.json" && -s "$BACKUP/rollback.private.json" ]]
   docker exec "$API" node -e "$(cat "$STAGE/deploy/check-api.cjs");check().catch(()=>process.exit(1));"
@@ -37,7 +37,7 @@ chmod 700 "$STAGE" "$BACKUP"
 git archive "$SHA" | tar -x -C "$STAGE"
 # Manifestos verificam arquivos de origem antes de construir e o código da API instalada.
 while IFS= read -r f; do (cd "$STAGE"; sha256sum -- "$f"); done < <(git ls-tree -r --name-only "$SHA" -- server shared frontend deploy package.json) > "$STAGE/source.sha256"
-while IFS= read -r f; do (cd "$STAGE"; sha256sum -- "$f"); done < <(git ls-tree -r --name-only "$SHA" -- server/src shared) > "$STAGE/code.sha256"
+while IFS= read -r f; do (cd "$STAGE"; sha256sum -- "$f"); done < <(git ls-tree -r --name-only "$SHA" -- server/src server/db shared) > "$STAGE/code.sha256"
 
 # Descobrir a configuração efetiva pelas labels, sem presumir os ajustes da cópia runtime.
 # API e Web podem ter sido recriados com overrides diferentes (ex.: segurança só no Web): unir os dois.
@@ -70,21 +70,15 @@ while IFS= read -r f; do
   fi
 done < <(git ls-tree -r --name-only "$SHA" -- server/src shared frontend/src frontend/vite.config.ts frontend/nginx.conf.template frontend/security-headers.conf frontend/docker-entrypoint.d server/Dockerfile frontend/Dockerfile)
 
-# Backup consistente do SQLite; não abre conexão PostgreSQL.
-# A API existente verifica sua própria conexão. Funciona com allowlist ativa:
-# loopback direto sem headers de proxy é o healthcheck local já autorizado pelo backend.
+# A API existente verifica sua própria conexão (loopback direto, healthcheck local autorizado).
 docker exec "$API" node -e "$(cat "$STAGE/deploy/check-api.cjs");check().catch(()=>process.exit(1));"
-TMPDB="/tmp/rinne-before-$STAMP.db"
-docker exec "$API" node -e 'const {DatabaseSync}=require("node:sqlite");const path=require("node:path");const d=new DatabaseSync(path.join(process.env.DATA_DIR||"/app/server/data","app.db"),{readOnly:true}); d.prepare("VACUUM INTO ?").run(process.argv[1]);d.close();const b=new DatabaseSync(process.argv[1],{readOnly:true});if(b.prepare("PRAGMA integrity_check").get().integrity_check!=="ok")process.exit(1);b.close();' "$TMPDB"
-# Streaming binário sem TTY também funciona quando /tmp é tmpfs.
-docker exec "$API" node -e 'require("node:fs").createReadStream(process.argv[1]).on("error",()=>process.exit(1)).pipe(process.stdout)' "$TMPDB" > "$BACKUP/app.db.part"
-[[ -s "$BACKUP/app.db.part" ]]
-EXPECTED_DB_SHA="$(docker exec "$API" node -e 'const f=require("node:fs"),c=require("node:crypto");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' "$TMPDB")"
-[[ "$EXPECTED_DB_SHA" =~ ^[0-9a-f]{64}$ ]]
-printf '%s  %s\n' "$EXPECTED_DB_SHA" "$BACKUP/app.db.part" | sha256sum --check --status
-mv -- "$BACKUP/app.db.part" "$BACKUP/app.db"
-docker exec "$API" node -e 'require("node:fs").unlinkSync(process.argv[1])' "$TMPDB"
-sha256sum "$BACKUP/app.db" > "$BACKUP/app.db.sha256"
+# Backup consistente do PostgreSQL (aplicação e dados), dentro do container do banco.
+DB=quest-rinne-db-1
+docker exec "$DB" sh -c 'exec pg_dump -U "${POSTGRES_USER:-postgres}" -d quest_rinne -Fc' > "$BACKUP/db.dump.part"
+[[ -s "$BACKUP/db.dump.part" ]]
+docker exec -i "$DB" pg_restore --list < "$BACKUP/db.dump.part" | grep -q 'TABLE DATA app users'
+mv -- "$BACKUP/db.dump.part" "$BACKUP/db.dump"
+sha256sum "$BACKUP/db.dump" > "$BACKUP/db.dump.sha256"
 
 PREV_API="quest-rinne-rollback-api:$STAMP"
 PREV_WEB="quest-rinne-rollback-web:$STAMP"
